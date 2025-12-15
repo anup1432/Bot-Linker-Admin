@@ -5,6 +5,36 @@ import { storage } from "./storage";
 import { initTelegramBot, getBotInfo, sendMessageToUser } from "./telegram-bot";
 import { telegramLoginSchema } from "@shared/schema";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
+
+const otpStore: Map<string, { otp: string; expiry: number; phoneNumber: string }> = new Map();
+
+async function sendOtpViaTwilio(phoneNumber: string, otp: string, settings: any): Promise<boolean> {
+  try {
+    if (!settings?.twilioAccountSid || !settings?.twilioAuthToken || !settings?.twilioPhoneNumber) {
+      console.error("Twilio credentials not configured");
+      return false;
+    }
+    
+    const twilio = await import("twilio");
+    const client = twilio.default(settings.twilioAccountSid, settings.twilioAuthToken);
+    
+    await client.messages.create({
+      body: `Your admin verification code is: ${otp}. Valid for 5 minutes.`,
+      from: settings.twilioPhoneNumber,
+      to: phoneNumber,
+    });
+    
+    return true;
+  } catch (error) {
+    console.error("Failed to send OTP:", error);
+    return false;
+  }
+}
+
+function generateOtp(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
 
 declare module "express-session" {
   interface SessionData {
@@ -548,11 +578,23 @@ export async function registerRoutes(
     }
   });
 
-  // Admin - Global settings
+  // Admin - Global settings (sanitized - no sensitive data exposed)
   app.get("/api/admin/settings", requireAdmin, async (req, res) => {
     try {
       const settings = await storage.getAdminSettings();
-      res.json(settings || {});
+      if (!settings) {
+        return res.json({});
+      }
+      const sanitizedSettings = {
+        id: settings.id,
+        requiredChannelId: settings.requiredChannelId,
+        requiredChannelUsername: settings.requiredChannelUsername,
+        welcomeMessage: settings.welcomeMessage,
+        minGroupAgeDays: settings.minGroupAgeDays,
+        createdAt: settings.createdAt,
+        updatedAt: settings.updatedAt,
+      };
+      res.json(sanitizedSettings);
     } catch (error) {
       res.status(500).json({ error: "Failed to get admin settings" });
     }
@@ -567,7 +609,16 @@ export async function registerRoutes(
         welcomeMessage,
         minGroupAgeDays: minGroupAgeDays || 30,
       });
-      res.json(settings);
+      const sanitizedSettings = {
+        id: settings.id,
+        requiredChannelId: settings.requiredChannelId,
+        requiredChannelUsername: settings.requiredChannelUsername,
+        welcomeMessage: settings.welcomeMessage,
+        minGroupAgeDays: settings.minGroupAgeDays,
+        createdAt: settings.createdAt,
+        updatedAt: settings.updatedAt,
+      };
+      res.json(sanitizedSettings);
     } catch (error) {
       res.status(500).json({ error: "Failed to update admin settings" });
     }
@@ -580,6 +631,193 @@ export async function registerRoutes(
       res.json(activities);
     } catch (error) {
       res.status(500).json({ error: "Failed to get activities" });
+    }
+  });
+
+  // ============ ADMIN AUTH & OTP ROUTES ============
+
+  // Get admin settings (sanitized - no credentials exposed)
+  app.get("/api/admin/auth-settings", requireAdmin, async (req, res) => {
+    try {
+      const settings = await storage.getAdminSettings();
+      res.json({
+        adminPhoneNumber: settings?.adminPhoneNumber || "",
+        hasPassword: !!settings?.adminPassword,
+        hasTwilioCredentials: !!(settings?.twilioAccountSid && settings?.twilioAuthToken && settings?.twilioPhoneNumber),
+        otpEnabled: settings?.otpEnabled || false,
+        twoStepEnabled: settings?.twoStepEnabled || false,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get auth settings" });
+    }
+  });
+
+  // Update admin phone number
+  app.post("/api/admin/phone", requireAdmin, async (req, res) => {
+    try {
+      const { phoneNumber } = req.body;
+      if (!phoneNumber) {
+        return res.status(400).json({ error: "Phone number required" });
+      }
+      await storage.createOrUpdateAdminSettings({ adminPhoneNumber: phoneNumber });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update phone number" });
+    }
+  });
+
+  // Update admin password
+  app.post("/api/admin/password", requireAdmin, async (req, res) => {
+    try {
+      const { password } = req.body;
+      if (!password || password.length < 6) {
+        return res.status(400).json({ error: "Password must be at least 6 characters" });
+      }
+      const hashedPassword = await bcrypt.hash(password, 10);
+      await storage.createOrUpdateAdminSettings({ adminPassword: hashedPassword });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update password" });
+    }
+  });
+
+  // Update Twilio credentials
+  app.post("/api/admin/twilio", requireAdmin, async (req, res) => {
+    try {
+      const { accountSid, authToken, phoneNumber } = req.body;
+      if (!accountSid || !authToken || !phoneNumber) {
+        return res.status(400).json({ error: "All Twilio credentials required" });
+      }
+      await storage.createOrUpdateAdminSettings({
+        twilioAccountSid: accountSid,
+        twilioAuthToken: authToken,
+        twilioPhoneNumber: phoneNumber,
+      });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update Twilio credentials" });
+    }
+  });
+
+  // Toggle OTP/2-step
+  app.post("/api/admin/security-toggle", requireAdmin, async (req, res) => {
+    try {
+      const { otpEnabled, twoStepEnabled } = req.body;
+      const settings = await storage.getAdminSettings();
+      
+      if (otpEnabled && !settings?.twilioAccountSid) {
+        return res.status(400).json({ error: "Configure Twilio credentials first" });
+      }
+      if (twoStepEnabled && !settings?.adminPassword) {
+        return res.status(400).json({ error: "Set password first" });
+      }
+      if ((otpEnabled || twoStepEnabled) && !settings?.adminPhoneNumber) {
+        return res.status(400).json({ error: "Set phone number first" });
+      }
+
+      await storage.createOrUpdateAdminSettings({
+        otpEnabled: otpEnabled ?? settings?.otpEnabled ?? false,
+        twoStepEnabled: twoStepEnabled ?? settings?.twoStepEnabled ?? false,
+      });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update security settings" });
+    }
+  });
+
+  // ============ ADMIN LOGIN WITH OTP ============
+
+  // Check if admin login is configured
+  app.get("/api/admin-login/check", async (req, res) => {
+    try {
+      const settings = await storage.getAdminSettings();
+      res.json({
+        isConfigured: !!(settings?.adminPhoneNumber && settings?.twilioAccountSid),
+        otpEnabled: settings?.otpEnabled || false,
+        twoStepEnabled: settings?.twoStepEnabled || false,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to check admin login" });
+    }
+  });
+
+  // Request OTP for admin login
+  app.post("/api/admin-login/request-otp", async (req, res) => {
+    try {
+      const { phoneNumber } = req.body;
+      const settings = await storage.getAdminSettings();
+      
+      if (!settings?.adminPhoneNumber || settings.adminPhoneNumber !== phoneNumber) {
+        return res.status(401).json({ error: "Phone number not registered" });
+      }
+      
+      if (!settings.otpEnabled) {
+        return res.status(400).json({ error: "OTP not enabled" });
+      }
+
+      const otp = generateOtp();
+      const sessionId = crypto.randomBytes(16).toString("hex");
+      
+      otpStore.set(sessionId, {
+        otp,
+        expiry: Date.now() + 5 * 60 * 1000,
+        phoneNumber,
+      });
+
+      const sent = await sendOtpViaTwilio(phoneNumber, otp, settings);
+      if (!sent) {
+        return res.status(500).json({ error: "Failed to send OTP" });
+      }
+
+      res.json({ sessionId, message: "OTP sent" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to request OTP" });
+    }
+  });
+
+  // Verify OTP for admin login
+  app.post("/api/admin-login/verify-otp", async (req, res) => {
+    try {
+      const { sessionId, otp, password } = req.body;
+      const settings = await storage.getAdminSettings();
+      
+      const otpData = otpStore.get(sessionId);
+      if (!otpData) {
+        return res.status(401).json({ error: "Session expired" });
+      }
+
+      if (Date.now() > otpData.expiry) {
+        otpStore.delete(sessionId);
+        return res.status(401).json({ error: "OTP expired" });
+      }
+
+      if (otpData.otp !== otp) {
+        return res.status(401).json({ error: "Invalid OTP" });
+      }
+
+      if (settings?.twoStepEnabled && settings?.adminPassword) {
+        if (!password) {
+          return res.status(400).json({ error: "Password required", needsPassword: true });
+        }
+        const validPassword = await bcrypt.compare(password, settings.adminPassword);
+        if (!validPassword) {
+          return res.status(401).json({ error: "Invalid password" });
+        }
+      }
+
+      otpStore.delete(sessionId);
+
+      const adminUsers = await storage.getAllUsers();
+      const adminUser = adminUsers.find(u => u.isAdmin);
+      
+      if (adminUser) {
+        req.session.userId = adminUser.id;
+        res.json({ success: true, user: adminUser });
+      } else {
+        res.status(500).json({ error: "No admin user found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to verify OTP" });
     }
   });
 

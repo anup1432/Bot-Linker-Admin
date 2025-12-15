@@ -47,6 +47,21 @@ Core tables:
 4. Session created with user ID stored in session data
 5. Protected routes check `req.session.userId` for authorization
 
+### Admin Security Features (OTP & 2-Step Verification)
+The admin panel supports enhanced security with:
+- **Phone OTP Login**: Admin can login using phone number with SMS OTP (requires Twilio configuration)
+- **2-Step Verification**: OTP + password for additional security
+- **Twilio Integration**: SMS OTP sent via Twilio API (credentials stored securely in database, never exposed to frontend)
+
+To configure:
+1. Go to Admin Settings > Security Settings
+2. Enter your phone number
+3. Configure Twilio credentials (Account SID, Auth Token, Phone Number)
+4. Set a password for 2-step verification
+5. Enable OTP and/or 2-Step verification toggles
+
+Note: Twilio credentials and password hash are NEVER returned to the frontend for security.
+
 ### Build System
 - Development: Vite dev server with HMR proxied through Express
 - Production: Vite builds static assets to `dist/public`, esbuild bundles server to `dist/index.cjs`
