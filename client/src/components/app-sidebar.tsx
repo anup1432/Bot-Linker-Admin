@@ -1,5 +1,5 @@
 import { useLocation, Link } from "wouter";
-import { LayoutDashboard, Users, Settings, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, Settings, LogOut, Shield, Wallet, DollarSign, Cog } from "lucide-react";
 import { SiTelegram } from "react-icons/si";
 import {
   Sidebar,
@@ -32,6 +32,34 @@ const menuItems = [
     title: "Bot Settings",
     url: "/settings",
     icon: Settings,
+  },
+];
+
+const adminMenuItems = [
+  {
+    title: "Manage Groups",
+    url: "/admin/groups",
+    icon: Users,
+  },
+  {
+    title: "Manage Users",
+    url: "/admin/users",
+    icon: Shield,
+  },
+  {
+    title: "Withdrawals",
+    url: "/admin/withdrawals",
+    icon: Wallet,
+  },
+  {
+    title: "Pricing",
+    url: "/admin/pricing",
+    icon: DollarSign,
+  },
+  {
+    title: "Global Settings",
+    url: "/admin/settings",
+    icon: Cog,
   },
 ];
 
@@ -78,6 +106,30 @@ export function AppSidebar({ user, onLogout }: AppSidebarProps) {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {user?.isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Admin</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {adminMenuItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton 
+                      asChild 
+                      isActive={location === item.url}
+                      data-testid={`link-admin-${item.title.toLowerCase().replace(' ', '-')}`}
+                    >
+                      <Link href={item.url}>
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
       <SidebarFooter className="p-4">
         {user && (

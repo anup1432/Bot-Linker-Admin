@@ -1,21 +1,29 @@
 import { 
-  users, groupJoins, botSettings, activityLogs,
+  users, groupJoins, botSettings, activityLogs, pricingSettings, withdrawals, adminSettings, notifications,
   type User, type InsertUser,
   type GroupJoin, type InsertGroupJoin,
   type BotSettings, type InsertBotSettings,
-  type ActivityLog, type InsertActivityLog
+  type ActivityLog, type InsertActivityLog,
+  type PricingSettings, type InsertPricingSettings,
+  type Withdrawal, type InsertWithdrawal,
+  type AdminSettings, type InsertAdminSettings,
+  type Notification, type InsertNotification
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, gte, sql } from "drizzle-orm";
+import { eq, desc, and, gte, sql, isNull, or, lte } from "drizzle-orm";
 
 export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByTelegramId(telegramId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
+  getAllUsers(): Promise<User[]>;
+  updateUserBalance(userId: string, amount: number): Promise<User | undefined>;
 
   // Group Joins
   getGroupJoins(userId: string): Promise<GroupJoin[]>;
+  getAllGroupJoins(): Promise<GroupJoin[]>;
   getGroupJoin(id: string): Promise<GroupJoin | undefined>;
   getRecentGroupJoins(userId: string, limit?: number): Promise<GroupJoin[]>;
   createGroupJoin(groupJoin: InsertGroupJoin): Promise<GroupJoin>;
@@ -28,6 +36,29 @@ export interface IStorage {
     failedJoins: number;
   }>;
 
+  // Pricing Settings
+  getPricingSettings(): Promise<PricingSettings[]>;
+  getPricingForAge(ageDays: number): Promise<PricingSettings | undefined>;
+  createPricingSettings(settings: InsertPricingSettings): Promise<PricingSettings>;
+  updatePricingSettings(id: string, updates: Partial<PricingSettings>): Promise<PricingSettings | undefined>;
+  deletePricingSettings(id: string): Promise<boolean>;
+
+  // Withdrawals
+  getWithdrawals(userId: string): Promise<Withdrawal[]>;
+  getAllWithdrawals(): Promise<Withdrawal[]>;
+  createWithdrawal(withdrawal: InsertWithdrawal): Promise<Withdrawal>;
+  updateWithdrawal(id: string, updates: Partial<Withdrawal>): Promise<Withdrawal | undefined>;
+
+  // Admin Settings
+  getAdminSettings(): Promise<AdminSettings | undefined>;
+  createOrUpdateAdminSettings(settings: InsertAdminSettings): Promise<AdminSettings>;
+
+  // Notifications
+  getNotifications(userId?: string): Promise<Notification[]>;
+  createNotification(notification: InsertNotification): Promise<Notification>;
+  markNotificationRead(id: string): Promise<Notification | undefined>;
+  markAllNotificationsRead(userId?: string): Promise<void>;
+
   // Bot Settings
   getBotSettings(userId: string): Promise<BotSettings | undefined>;
   createBotSettings(settings: InsertBotSettings): Promise<BotSettings>;
@@ -35,10 +66,10 @@ export interface IStorage {
 
   // Activity Logs
   getActivityLogs(userId: string, limit?: number): Promise<ActivityLog[]>;
+  getAllActivityLogs(limit?: number): Promise<ActivityLog[]>;
   createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
 }
 
-// DatabaseStorage implementation using Drizzle ORM
 export class DatabaseStorage implements IStorage {
   // Users
   async getUser(id: string): Promise<User | undefined> {
@@ -56,11 +87,35 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
+    const [updated] = await db.update(users)
+      .set(updates)
+      .where(eq(users.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return db.select().from(users).orderBy(desc(users.createdAt));
+  }
+
+  async updateUserBalance(userId: string, amount: number): Promise<User | undefined> {
+    const [updated] = await db.update(users)
+      .set({ balance: sql`${users.balance} + ${amount}` })
+      .where(eq(users.id, userId))
+      .returning();
+    return updated || undefined;
+  }
+
   // Group Joins
   async getGroupJoins(userId: string): Promise<GroupJoin[]> {
     return db.select().from(groupJoins)
       .where(eq(groupJoins.userId, userId))
       .orderBy(desc(groupJoins.createdAt));
+  }
+
+  async getAllGroupJoins(): Promise<GroupJoin[]> {
+    return db.select().from(groupJoins).orderBy(desc(groupJoins.createdAt));
   }
 
   async getGroupJoin(id: string): Promise<GroupJoin | undefined> {
@@ -89,7 +144,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteGroupJoin(id: string): Promise<boolean> {
-    const result = await db.delete(groupJoins).where(eq(groupJoins.id, id));
+    await db.delete(groupJoins).where(eq(groupJoins.id, id));
     return true;
   }
 
@@ -107,12 +162,129 @@ export class DatabaseStorage implements IStorage {
       totalGroups: groups.length,
       pendingJoins: groups.filter((g) => g.status === "pending").length,
       verifiedToday: groups.filter((g) => {
-        if (g.status !== "verified" || !g.verifiedAt) return false;
+        if (g.verificationStatus !== "approved" || !g.verifiedAt) return false;
         const verifiedDate = new Date(g.verifiedAt);
         return verifiedDate >= today;
       }).length,
       failedJoins: groups.filter((g) => g.status === "failed").length,
     };
+  }
+
+  // Pricing Settings
+  async getPricingSettings(): Promise<PricingSettings[]> {
+    return db.select().from(pricingSettings)
+      .where(eq(pricingSettings.isActive, true))
+      .orderBy(pricingSettings.minAgeDays);
+  }
+
+  async getPricingForAge(ageDays: number): Promise<PricingSettings | undefined> {
+    const [pricing] = await db.select().from(pricingSettings)
+      .where(
+        and(
+          eq(pricingSettings.isActive, true),
+          lte(pricingSettings.minAgeDays, ageDays),
+          or(
+            isNull(pricingSettings.maxAgeDays),
+            gte(pricingSettings.maxAgeDays, ageDays)
+          )
+        )
+      )
+      .limit(1);
+    return pricing || undefined;
+  }
+
+  async createPricingSettings(settings: InsertPricingSettings): Promise<PricingSettings> {
+    const [created] = await db.insert(pricingSettings).values(settings).returning();
+    return created;
+  }
+
+  async updatePricingSettings(id: string, updates: Partial<PricingSettings>): Promise<PricingSettings | undefined> {
+    const [updated] = await db.update(pricingSettings)
+      .set(updates)
+      .where(eq(pricingSettings.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deletePricingSettings(id: string): Promise<boolean> {
+    await db.delete(pricingSettings).where(eq(pricingSettings.id, id));
+    return true;
+  }
+
+  // Withdrawals
+  async getWithdrawals(userId: string): Promise<Withdrawal[]> {
+    return db.select().from(withdrawals)
+      .where(eq(withdrawals.userId, userId))
+      .orderBy(desc(withdrawals.createdAt));
+  }
+
+  async getAllWithdrawals(): Promise<Withdrawal[]> {
+    return db.select().from(withdrawals).orderBy(desc(withdrawals.createdAt));
+  }
+
+  async createWithdrawal(withdrawal: InsertWithdrawal): Promise<Withdrawal> {
+    const [created] = await db.insert(withdrawals).values(withdrawal).returning();
+    return created;
+  }
+
+  async updateWithdrawal(id: string, updates: Partial<Withdrawal>): Promise<Withdrawal | undefined> {
+    const [updated] = await db.update(withdrawals)
+      .set(updates)
+      .where(eq(withdrawals.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  // Admin Settings
+  async getAdminSettings(): Promise<AdminSettings | undefined> {
+    const [settings] = await db.select().from(adminSettings).limit(1);
+    return settings || undefined;
+  }
+
+  async createOrUpdateAdminSettings(settings: InsertAdminSettings): Promise<AdminSettings> {
+    const existing = await this.getAdminSettings();
+    if (existing) {
+      const [updated] = await db.update(adminSettings)
+        .set({ ...settings, updatedAt: new Date() })
+        .where(eq(adminSettings.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(adminSettings).values(settings).returning();
+    return created;
+  }
+
+  // Notifications
+  async getNotifications(userId?: string): Promise<Notification[]> {
+    if (userId) {
+      return db.select().from(notifications)
+        .where(or(eq(notifications.userId, userId), isNull(notifications.userId)))
+        .orderBy(desc(notifications.createdAt));
+    }
+    return db.select().from(notifications).orderBy(desc(notifications.createdAt));
+  }
+
+  async createNotification(notification: InsertNotification): Promise<Notification> {
+    const [created] = await db.insert(notifications).values(notification).returning();
+    return created;
+  }
+
+  async markNotificationRead(id: string): Promise<Notification | undefined> {
+    const [updated] = await db.update(notifications)
+      .set({ isRead: true })
+      .where(eq(notifications.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async markAllNotificationsRead(userId?: string): Promise<void> {
+    if (userId) {
+      await db.update(notifications)
+        .set({ isRead: true })
+        .where(or(eq(notifications.userId, userId), isNull(notifications.userId)));
+    } else {
+      await db.update(notifications).set({ isRead: true });
+    }
   }
 
   // Bot Settings
@@ -138,6 +310,12 @@ export class DatabaseStorage implements IStorage {
   async getActivityLogs(userId: string, limit: number = 20): Promise<ActivityLog[]> {
     return db.select().from(activityLogs)
       .where(eq(activityLogs.userId, userId))
+      .orderBy(desc(activityLogs.createdAt))
+      .limit(limit);
+  }
+
+  async getAllActivityLogs(limit: number = 50): Promise<ActivityLog[]> {
+    return db.select().from(activityLogs)
       .orderBy(desc(activityLogs.createdAt))
       .limit(limit);
   }

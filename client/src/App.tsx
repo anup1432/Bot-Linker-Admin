@@ -15,6 +15,11 @@ import LoginPage from "@/pages/login";
 import DashboardPage from "@/pages/dashboard";
 import GroupsPage from "@/pages/groups";
 import SettingsPage from "@/pages/settings";
+import AdminGroupsPage from "@/pages/admin-groups";
+import AdminUsersPage from "@/pages/admin-users";
+import AdminWithdrawalsPage from "@/pages/admin-withdrawals";
+import AdminPricingPage from "@/pages/admin-pricing";
+import AdminSettingsPage from "@/pages/admin-settings";
 import type { User } from "@shared/schema";
 
 interface TelegramUser {
@@ -74,6 +79,15 @@ function AuthenticatedApp({ user, onLogout }: { user: User; onLogout: () => void
               <Route path="/dashboard" component={DashboardPage} />
               <Route path="/groups" component={GroupsPage} />
               <Route path="/settings" component={SettingsPage} />
+              {user.isAdmin && (
+                <>
+                  <Route path="/admin/groups" component={AdminGroupsPage} />
+                  <Route path="/admin/users" component={AdminUsersPage} />
+                  <Route path="/admin/withdrawals" component={AdminWithdrawalsPage} />
+                  <Route path="/admin/pricing" component={AdminPricingPage} />
+                  <Route path="/admin/settings" component={AdminSettingsPage} />
+                </>
+              )}
               <Route component={NotFound} />
             </Switch>
           </main>

@@ -2,11 +2,10 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
 import { storage } from "./storage";
-import { initTelegramBot, getBotInfo } from "./telegram-bot";
+import { initTelegramBot, getBotInfo, sendMessageToUser } from "./telegram-bot";
 import { telegramLoginSchema } from "@shared/schema";
 import crypto from "crypto";
 
-// Extend Express Request type
 declare module "express-session" {
   interface SessionData {
     userId?: string;
@@ -21,22 +20,31 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+// Admin middleware
+async function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  
+  const user = await storage.getUser(req.session.userId);
+  if (!user?.isAdmin) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  next();
+}
+
 // Verify Telegram login data
 function verifyTelegramAuth(data: Record<string, unknown>, botToken: string): boolean {
   const { hash, ...authData } = data;
   
   if (!hash || typeof hash !== "string") return false;
   
-  // Create data-check-string
   const checkString = Object.keys(authData)
     .sort()
     .map((key) => `${key}=${authData[key]}`)
     .join("\n");
   
-  // Create secret key
   const secretKey = crypto.createHash("sha256").update(botToken).digest();
-  
-  // Calculate HMAC
   const hmac = crypto.createHmac("sha256", secretKey).update(checkString).digest("hex");
   
   return hmac === hash;
@@ -46,7 +54,6 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // Initialize session
   app.use(
     session({
       secret: process.env.SESSION_SECRET || "telegram-bot-admin-secret",
@@ -55,12 +62,11 @@ export async function registerRoutes(
       cookie: {
         secure: process.env.NODE_ENV === "production",
         httpOnly: true,
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        maxAge: 7 * 24 * 60 * 60 * 1000,
       },
     })
   );
 
-  // Initialize Telegram bot
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (botToken) {
     initTelegramBot(botToken);
@@ -68,7 +74,6 @@ export async function registerRoutes(
 
   // ============ AUTH ROUTES ============
 
-  // Get current user
   app.get("/api/auth/me", requireAuth, async (req, res) => {
     try {
       const user = await storage.getUser(req.session.userId!);
@@ -81,7 +86,6 @@ export async function registerRoutes(
     }
   });
 
-  // Telegram login
   app.post("/api/auth/telegram", async (req, res) => {
     try {
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -90,7 +94,6 @@ export async function registerRoutes(
         return res.status(500).json({ error: "Bot not configured" });
       }
 
-      // Validate the data
       const parseResult = telegramLoginSchema.safeParse(req.body);
       if (!parseResult.success) {
         return res.status(400).json({ error: "Invalid login data" });
@@ -98,20 +101,17 @@ export async function registerRoutes(
 
       const telegramData = parseResult.data;
 
-      // Verify Telegram auth (skip in development for testing)
       if (process.env.NODE_ENV === "production") {
         if (!verifyTelegramAuth(req.body, botToken)) {
           return res.status(401).json({ error: "Invalid authentication" });
         }
       }
 
-      // Check if auth is not too old (max 1 day)
       const authAge = Date.now() / 1000 - telegramData.auth_date;
       if (authAge > 86400) {
         return res.status(401).json({ error: "Authentication expired" });
       }
 
-      // Find or create user
       let user = await storage.getUserByTelegramId(telegramData.id.toString());
       
       if (!user) {
@@ -122,9 +122,11 @@ export async function registerRoutes(
           lastName: telegramData.last_name || null,
           photoUrl: telegramData.photo_url || null,
           authDate: telegramData.auth_date,
+          balance: 0,
+          isAdmin: false,
+          channelVerified: false,
         });
 
-        // Create default bot settings
         await storage.createBotSettings({
           userId: user.id,
           welcomeMessage: "Welcome! Send me a group invite link and I will track it for you.",
@@ -134,9 +136,7 @@ export async function registerRoutes(
         });
       }
 
-      // Set session
       req.session.userId = user.id;
-      
       res.json({ user });
     } catch (error) {
       console.error("Telegram auth error:", error);
@@ -144,7 +144,6 @@ export async function registerRoutes(
     }
   });
 
-  // Logout
   app.post("/api/auth/logout", (req, res) => {
     req.session.destroy((err) => {
       if (err) {
@@ -164,7 +163,7 @@ export async function registerRoutes(
     res.json(info);
   });
 
-  // ============ STATS ============
+  // ============ USER STATS ============
 
   app.get("/api/stats", requireAuth, async (req, res) => {
     try {
@@ -186,7 +185,7 @@ export async function registerRoutes(
     }
   });
 
-  // ============ GROUPS ============
+  // ============ USER GROUPS ============
 
   app.get("/api/groups", requireAuth, async (req, res) => {
     try {
@@ -206,36 +205,6 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/groups/:id/retry", requireAuth, async (req, res) => {
-    try {
-      const { id } = req.params;
-      const group = await storage.getGroupJoin(id);
-      
-      if (!group || group.userId !== req.session.userId) {
-        return res.status(404).json({ error: "Group not found" });
-      }
-
-      // Update status to pending for retry
-      const updated = await storage.updateGroupJoin(id, {
-        status: "joined",
-        joinedAt: new Date(),
-        errorMessage: null,
-      });
-
-      // Log the retry
-      await storage.createActivityLog({
-        userId: req.session.userId!,
-        action: "joined",
-        description: `Retried joining group: ${group.groupLink}`,
-        groupJoinId: id,
-      });
-
-      res.json(updated);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to retry join" });
-    }
-  });
-
   app.delete("/api/groups/:id", requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
@@ -252,13 +221,12 @@ export async function registerRoutes(
     }
   });
 
-  // ============ SETTINGS ============
+  // ============ USER SETTINGS ============
 
   app.get("/api/settings", requireAuth, async (req, res) => {
     try {
       let settings = await storage.getBotSettings(req.session.userId!);
       
-      // Create default settings if none exist
       if (!settings) {
         settings = await storage.createBotSettings({
           userId: req.session.userId!,
@@ -301,6 +269,316 @@ export async function registerRoutes(
       res.json(settings);
     } catch (error) {
       res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+
+  // ============ USER WITHDRAWALS ============
+
+  app.get("/api/withdrawals", requireAuth, async (req, res) => {
+    try {
+      const withdrawals = await storage.getWithdrawals(req.session.userId!);
+      res.json(withdrawals);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get withdrawals" });
+    }
+  });
+
+  // ============ NOTIFICATIONS ============
+
+  app.get("/api/notifications", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      const notifications = await storage.getNotifications(user?.isAdmin ? undefined : req.session.userId);
+      res.json(notifications);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get notifications" });
+    }
+  });
+
+  app.post("/api/notifications/:id/read", requireAuth, async (req, res) => {
+    try {
+      const notification = await storage.markNotificationRead(req.params.id);
+      res.json(notification);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to mark notification read" });
+    }
+  });
+
+  app.post("/api/notifications/read-all", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      await storage.markAllNotificationsRead(user?.isAdmin ? undefined : req.session.userId);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to mark notifications read" });
+    }
+  });
+
+  // ============ ADMIN ROUTES ============
+
+  // Admin dashboard stats
+  app.get("/api/admin/stats", requireAdmin, async (req, res) => {
+    try {
+      const users = await storage.getAllUsers();
+      const groups = await storage.getAllGroupJoins();
+      const withdrawals = await storage.getAllWithdrawals();
+
+      const stats = {
+        totalUsers: users.length,
+        totalGroups: groups.length,
+        pendingGroups: groups.filter(g => g.verificationStatus === "pending").length,
+        approvedGroups: groups.filter(g => g.verificationStatus === "approved").length,
+        pendingWithdrawals: withdrawals.filter(w => w.status === "pending").length,
+        totalPaidOut: withdrawals.filter(w => w.status === "completed").reduce((sum, w) => sum + w.amount, 0),
+      };
+
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get admin stats" });
+    }
+  });
+
+  // Admin - Get all users
+  app.get("/api/admin/users", requireAdmin, async (req, res) => {
+    try {
+      const users = await storage.getAllUsers();
+      res.json(users);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get users" });
+    }
+  });
+
+  // Admin - Update user
+  app.patch("/api/admin/users/:id", requireAdmin, async (req, res) => {
+    try {
+      const { isAdmin, balance } = req.body;
+      const updated = await storage.updateUser(req.params.id, { isAdmin, balance });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update user" });
+    }
+  });
+
+  // Admin - Get all groups
+  app.get("/api/admin/groups", requireAdmin, async (req, res) => {
+    try {
+      const groups = await storage.getAllGroupJoins();
+      res.json(groups);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get groups" });
+    }
+  });
+
+  // Admin - Update group (verify, set age, etc)
+  app.patch("/api/admin/groups/:id", requireAdmin, async (req, res) => {
+    try {
+      const { groupAge, verificationStatus, ownershipTransferred, paymentAmount, errorMessage } = req.body;
+      
+      const group = await storage.getGroupJoin(req.params.id);
+      if (!group) {
+        return res.status(404).json({ error: "Group not found" });
+      }
+
+      const updates: any = {};
+      
+      if (groupAge !== undefined) updates.groupAge = groupAge;
+      if (verificationStatus !== undefined) {
+        updates.verificationStatus = verificationStatus;
+        if (verificationStatus === "approved") {
+          updates.verifiedAt = new Date();
+        }
+      }
+      if (ownershipTransferred !== undefined) {
+        updates.ownershipTransferred = ownershipTransferred;
+        if (ownershipTransferred) {
+          updates.ownershipVerifiedAt = new Date();
+        }
+      }
+      if (paymentAmount !== undefined) {
+        updates.paymentAmount = paymentAmount;
+        updates.paymentAdded = true;
+        
+        // Add payment to user balance
+        await storage.updateUserBalance(group.userId, paymentAmount);
+        
+        // Notify user
+        const user = await storage.getUser(group.userId);
+        if (user) {
+          await sendMessageToUser(user.telegramId,
+            `Payment added to your account!\n\n` +
+            `Group: ${group.groupLink}\n` +
+            `Amount: +${paymentAmount.toFixed(2)} INR\n\n` +
+            `Check your balance with /balance`
+          );
+        }
+
+        // Create activity log
+        await storage.createActivityLog({
+          userId: group.userId,
+          action: "payment_added",
+          description: `Payment of ${paymentAmount} INR added for group: ${group.groupLink}`,
+          groupJoinId: group.id,
+        });
+      }
+      if (errorMessage !== undefined) updates.errorMessage = errorMessage;
+
+      const updated = await storage.updateGroupJoin(req.params.id, updates);
+
+      // Notify user about status change
+      const user = await storage.getUser(group.userId);
+      if (user && verificationStatus) {
+        if (verificationStatus === "approved") {
+          await sendMessageToUser(user.telegramId,
+            `Your group has been verified!\n\n` +
+            `Group: ${group.groupLink}\n` +
+            `Status: Approved (A)\n` +
+            `Age: ${groupAge || group.groupAge} days\n\n` +
+            `Next: Transfer ownership to complete the process.`
+          );
+        } else if (verificationStatus === "rejected") {
+          await sendMessageToUser(user.telegramId,
+            `Your group was rejected.\n\n` +
+            `Group: ${group.groupLink}\n` +
+            `Reason: ${errorMessage || "Does not meet requirements"}`
+          );
+        }
+      }
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating group:", error);
+      res.status(500).json({ error: "Failed to update group" });
+    }
+  });
+
+  // Admin - Get all withdrawals
+  app.get("/api/admin/withdrawals", requireAdmin, async (req, res) => {
+    try {
+      const withdrawals = await storage.getAllWithdrawals();
+      res.json(withdrawals);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get withdrawals" });
+    }
+  });
+
+  // Admin - Process withdrawal
+  app.patch("/api/admin/withdrawals/:id", requireAdmin, async (req, res) => {
+    try {
+      const { status } = req.body;
+      const withdrawal = await storage.updateWithdrawal(req.params.id, {
+        status,
+        processedAt: status === "completed" ? new Date() : undefined,
+      });
+
+      // Notify user
+      if (withdrawal) {
+        const user = await storage.getUser(withdrawal.userId);
+        if (user) {
+          if (status === "completed") {
+            await sendMessageToUser(user.telegramId,
+              `Withdrawal processed!\n\n` +
+              `Amount: ${withdrawal.amount.toFixed(2)} INR\n` +
+              `Method: ${withdrawal.paymentMethod}\n\n` +
+              `Payment has been sent to your account.`
+            );
+          } else if (status === "rejected") {
+            // Refund balance
+            await storage.updateUserBalance(user.id, withdrawal.amount);
+            await sendMessageToUser(user.telegramId,
+              `Withdrawal request rejected.\n\n` +
+              `Amount: ${withdrawal.amount.toFixed(2)} INR has been refunded to your balance.`
+            );
+          }
+        }
+      }
+
+      res.json(withdrawal);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to process withdrawal" });
+    }
+  });
+
+  // Admin - Pricing settings
+  app.get("/api/admin/pricing", requireAdmin, async (req, res) => {
+    try {
+      const pricing = await storage.getPricingSettings();
+      res.json(pricing);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get pricing" });
+    }
+  });
+
+  app.post("/api/admin/pricing", requireAdmin, async (req, res) => {
+    try {
+      const { minAgeDays, maxAgeDays, pricePerGroup, isActive } = req.body;
+      const pricing = await storage.createPricingSettings({
+        minAgeDays,
+        maxAgeDays: maxAgeDays || null,
+        pricePerGroup,
+        isActive: isActive ?? true,
+      });
+      res.json(pricing);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create pricing" });
+    }
+  });
+
+  app.patch("/api/admin/pricing/:id", requireAdmin, async (req, res) => {
+    try {
+      const { minAgeDays, maxAgeDays, pricePerGroup, isActive } = req.body;
+      const pricing = await storage.updatePricingSettings(req.params.id, {
+        minAgeDays,
+        maxAgeDays,
+        pricePerGroup,
+        isActive,
+      });
+      res.json(pricing);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update pricing" });
+    }
+  });
+
+  app.delete("/api/admin/pricing/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.deletePricingSettings(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete pricing" });
+    }
+  });
+
+  // Admin - Global settings
+  app.get("/api/admin/settings", requireAdmin, async (req, res) => {
+    try {
+      const settings = await storage.getAdminSettings();
+      res.json(settings || {});
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get admin settings" });
+    }
+  });
+
+  app.post("/api/admin/settings", requireAdmin, async (req, res) => {
+    try {
+      const { requiredChannelId, requiredChannelUsername, welcomeMessage, minGroupAgeDays } = req.body;
+      const settings = await storage.createOrUpdateAdminSettings({
+        requiredChannelId,
+        requiredChannelUsername,
+        welcomeMessage,
+        minGroupAgeDays: minGroupAgeDays || 30,
+      });
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update admin settings" });
+    }
+  });
+
+  // Admin - Activity logs
+  app.get("/api/admin/activities", requireAdmin, async (req, res) => {
+    try {
+      const activities = await storage.getAllActivityLogs();
+      res.json(activities);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get activities" });
     }
   });
 
