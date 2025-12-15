@@ -1,10 +1,12 @@
 import { 
+  users, groupJoins, botSettings, activityLogs,
   type User, type InsertUser,
   type GroupJoin, type InsertGroupJoin,
   type BotSettings, type InsertBotSettings,
   type ActivityLog, type InsertActivityLog
 } from "@shared/schema";
-import { randomUUID } from "crypto";
+import { db } from "./db";
+import { eq, desc, and, gte, sql } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -36,81 +38,59 @@ export interface IStorage {
   createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-  private groupJoins: Map<string, GroupJoin>;
-  private botSettings: Map<string, BotSettings>;
-  private activityLogs: Map<string, ActivityLog>;
-
-  constructor() {
-    this.users = new Map();
-    this.groupJoins = new Map();
-    this.botSettings = new Map();
-    this.activityLogs = new Map();
-  }
-
+// DatabaseStorage implementation using Drizzle ORM
+export class DatabaseStorage implements IStorage {
   // Users
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
   }
 
   async getUserByTelegramId(telegramId: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.telegramId === telegramId
-    );
+    const [user] = await db.select().from(users).where(eq(users.telegramId, telegramId));
+    return user || undefined;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
+    const [user] = await db.insert(users).values(insertUser).returning();
     return user;
   }
 
   // Group Joins
   async getGroupJoins(userId: string): Promise<GroupJoin[]> {
-    return Array.from(this.groupJoins.values())
-      .filter((gj) => gj.userId === userId)
-      .sort((a, b) => {
-        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return dateB - dateA;
-      });
+    return db.select().from(groupJoins)
+      .where(eq(groupJoins.userId, userId))
+      .orderBy(desc(groupJoins.createdAt));
   }
 
   async getGroupJoin(id: string): Promise<GroupJoin | undefined> {
-    return this.groupJoins.get(id);
+    const [group] = await db.select().from(groupJoins).where(eq(groupJoins.id, id));
+    return group || undefined;
   }
 
   async getRecentGroupJoins(userId: string, limit: number = 10): Promise<GroupJoin[]> {
-    const all = await this.getGroupJoins(userId);
-    return all.slice(0, limit);
+    return db.select().from(groupJoins)
+      .where(eq(groupJoins.userId, userId))
+      .orderBy(desc(groupJoins.createdAt))
+      .limit(limit);
   }
 
   async createGroupJoin(insertGroupJoin: InsertGroupJoin): Promise<GroupJoin> {
-    const id = randomUUID();
-    const groupJoin: GroupJoin = {
-      ...insertGroupJoin,
-      id,
-      joinedAt: null,
-      verifiedAt: null,
-      createdAt: new Date(),
-    };
-    this.groupJoins.set(id, groupJoin);
-    return groupJoin;
+    const [group] = await db.insert(groupJoins).values(insertGroupJoin).returning();
+    return group;
   }
 
   async updateGroupJoin(id: string, updates: Partial<GroupJoin>): Promise<GroupJoin | undefined> {
-    const existing = this.groupJoins.get(id);
-    if (!existing) return undefined;
-    
-    const updated = { ...existing, ...updates };
-    this.groupJoins.set(id, updated);
-    return updated;
+    const [updated] = await db.update(groupJoins)
+      .set(updates)
+      .where(eq(groupJoins.id, id))
+      .returning();
+    return updated || undefined;
   }
 
   async deleteGroupJoin(id: string): Promise<boolean> {
-    return this.groupJoins.delete(id);
+    const result = await db.delete(groupJoins).where(eq(groupJoins.id, id));
+    return true;
   }
 
   async getGroupStats(userId: string): Promise<{
@@ -137,49 +117,35 @@ export class MemStorage implements IStorage {
 
   // Bot Settings
   async getBotSettings(userId: string): Promise<BotSettings | undefined> {
-    return Array.from(this.botSettings.values()).find(
-      (settings) => settings.userId === userId
-    );
+    const [settings] = await db.select().from(botSettings).where(eq(botSettings.userId, userId));
+    return settings || undefined;
   }
 
   async createBotSettings(insertSettings: InsertBotSettings): Promise<BotSettings> {
-    const id = randomUUID();
-    const settings: BotSettings = { ...insertSettings, id };
-    this.botSettings.set(id, settings);
+    const [settings] = await db.insert(botSettings).values(insertSettings).returning();
     return settings;
   }
 
   async updateBotSettings(userId: string, updates: Partial<BotSettings>): Promise<BotSettings | undefined> {
-    const existing = await this.getBotSettings(userId);
-    if (!existing) return undefined;
-    
-    const updated = { ...existing, ...updates };
-    this.botSettings.set(existing.id, updated);
-    return updated;
+    const [updated] = await db.update(botSettings)
+      .set(updates)
+      .where(eq(botSettings.userId, userId))
+      .returning();
+    return updated || undefined;
   }
 
   // Activity Logs
   async getActivityLogs(userId: string, limit: number = 20): Promise<ActivityLog[]> {
-    return Array.from(this.activityLogs.values())
-      .filter((log) => log.userId === userId)
-      .sort((a, b) => {
-        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return dateB - dateA;
-      })
-      .slice(0, limit);
+    return db.select().from(activityLogs)
+      .where(eq(activityLogs.userId, userId))
+      .orderBy(desc(activityLogs.createdAt))
+      .limit(limit);
   }
 
   async createActivityLog(insertLog: InsertActivityLog): Promise<ActivityLog> {
-    const id = randomUUID();
-    const log: ActivityLog = {
-      ...insertLog,
-      id,
-      createdAt: new Date(),
-    };
-    this.activityLogs.set(id, log);
+    const [log] = await db.insert(activityLogs).values(insertLog).returning();
     return log;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
