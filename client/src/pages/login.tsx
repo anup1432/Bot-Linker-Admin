@@ -1,6 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SiTelegram } from "react-icons/si";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 
 declare global {
@@ -29,23 +32,24 @@ interface LoginPageProps {
 export default function LoginPage({ onLogin, botUsername }: LoginPageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+  const [telegramId, setTelegramId] = useState("");
+  const [username, setUsername] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [widgetError, setWidgetError] = useState(false);
 
   useEffect(() => {
     if (!botUsername) return;
 
-    // Clear previous widget
     if (containerRef.current) {
       containerRef.current.innerHTML = "";
     }
 
-    // Create callback
     window.TelegramLoginWidget = {
       dataOnauth: (user: TelegramUser) => {
         onLogin(user);
       },
     };
 
-    // Create script
     const script = document.createElement("script");
     script.src = "https://telegram.org/js/telegram-widget.js?22";
     script.setAttribute("data-telegram-login", botUsername);
@@ -54,15 +58,42 @@ export default function LoginPage({ onLogin, botUsername }: LoginPageProps) {
     script.setAttribute("data-onauth", "TelegramLoginWidget.dataOnauth(user)");
     script.setAttribute("data-request-access", "write");
     script.async = true;
+    
+    script.onerror = () => setWidgetError(true);
+    
+    const checkWidget = setTimeout(() => {
+      if (containerRef.current && containerRef.current.children.length <= 1) {
+        setWidgetError(true);
+      }
+    }, 3000);
 
     containerRef.current?.appendChild(script);
 
     return () => {
+      clearTimeout(checkWidget);
       if (containerRef.current) {
         containerRef.current.innerHTML = "";
       }
     };
   }, [botUsername, onLogin]);
+
+  const handleDevLogin = async () => {
+    if (!telegramId) {
+      toast({ title: "Error", description: "Please enter your Telegram ID", variant: "destructive" });
+      return;
+    }
+    
+    setIsLoading(true);
+    const mockUser: TelegramUser = {
+      id: parseInt(telegramId),
+      first_name: username || "User",
+      username: username || undefined,
+      auth_date: Math.floor(Date.now() / 1000),
+      hash: "dev_mode_hash",
+    };
+    onLogin(mockUser);
+    setIsLoading(false);
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
@@ -79,15 +110,48 @@ export default function LoginPage({ onLogin, botUsername }: LoginPageProps) {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-6">
-          {botUsername ? (
+          {botUsername && !widgetError ? (
             <div ref={containerRef} className="flex justify-center" data-testid="telegram-login-widget" />
-          ) : (
-            <div className="flex flex-col items-center gap-3 rounded-md bg-muted p-6 text-center">
-              <p className="text-sm text-muted-foreground">
-                Bot not configured. Please set up your Telegram bot token first.
-              </p>
+          ) : null}
+          
+          {(!botUsername || widgetError) && (
+            <div className="w-full space-y-4">
+              <div className="rounded-md bg-amber-500/10 p-3 text-center text-sm text-amber-600 dark:text-amber-400">
+                {!botUsername 
+                  ? "Bot not configured. Use manual login below." 
+                  : "Telegram widget not loading. Use manual login."}
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="telegramId">Telegram ID</Label>
+                  <Input
+                    id="telegramId"
+                    type="number"
+                    placeholder="Enter your Telegram ID"
+                    value={telegramId}
+                    onChange={(e) => setTelegramId(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="username">Username (optional)</Label>
+                  <Input
+                    id="username"
+                    placeholder="Your username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                  />
+                </div>
+                <Button 
+                  onClick={handleDevLogin} 
+                  className="w-full" 
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Signing in..." : "Sign In"}
+                </Button>
+              </div>
             </div>
           )}
+          
           <div className="text-center text-xs text-muted-foreground">
             <p>
               By signing in, you agree to allow this bot to access your Telegram account
