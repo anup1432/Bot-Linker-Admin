@@ -175,6 +175,49 @@ export async function registerRoutes(
     }
   });
 
+  // Simple username/password login
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      
+      // Simple admin credentials check
+      if (username === "admin" && password === "admin123") {
+        // Find or create admin user
+        let user = await storage.getUserByTelegramId("admin");
+        
+        if (!user) {
+          user = await storage.createUser({
+            telegramId: "admin",
+            username: "admin",
+            firstName: "Admin",
+            lastName: null,
+            photoUrl: null,
+            authDate: Math.floor(Date.now() / 1000),
+            balance: 0,
+            isAdmin: true,
+            channelVerified: true,
+          });
+
+          await storage.createBotSettings({
+            userId: user.id,
+            welcomeMessage: "Welcome! Send me a group invite link and I will track it for you.",
+            verificationMessage: "Verification complete!",
+            autoJoin: true,
+            notifyOnJoin: true,
+          });
+        }
+        
+        req.session.userId = user.id;
+        res.json({ user });
+      } else {
+        return res.status(401).json({ error: "Invalid username or password" });
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ error: "Login failed" });
+    }
+  });
+
   app.post("/api/auth/logout", (req, res) => {
     req.session.destroy((err) => {
       if (err) {
