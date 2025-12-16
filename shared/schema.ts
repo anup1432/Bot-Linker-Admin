@@ -154,6 +154,30 @@ export const insertNotificationSchema = createInsertSchema(notifications).omit({
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = typeof notifications.$inferSelect;
 
+// User Sessions - stores Telegram userbot sessions (encrypted)
+export const userSessions = pgTable("user_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  telegramId: text("telegram_id").notNull(),
+  apiId: text("api_id").notNull(),
+  apiHash: text("api_hash").notNull(),
+  phoneNumber: text("phone_number"),
+  sessionString: text("session_string"),
+  isActive: boolean("is_active").notNull().default(false),
+  lastUsed: timestamp("last_used"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertUserSessionSchema = createInsertSchema(userSessions).omit({ 
+  id: true, 
+  lastUsed: true,
+  createdAt: true, 
+  updatedAt: true 
+});
+export type InsertUserSession = z.infer<typeof insertUserSessionSchema>;
+export type UserSession = typeof userSessions.$inferSelect;
+
 // Telegram login data validation schema
 export const telegramLoginSchema = z.object({
   id: z.number(),

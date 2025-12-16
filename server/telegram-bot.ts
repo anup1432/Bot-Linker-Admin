@@ -1,5 +1,14 @@
 import TelegramBot from "node-telegram-bot-api";
 import { storage } from "./storage";
+import { 
+  startSession, 
+  processSessionStep, 
+  getSessionState, 
+  cancelSession,
+  joinGroupAndGetInfo,
+  getActiveClient,
+  checkOwnership
+} from "./userbot-manager";
 
 let bot: TelegramBot | null = null;
 let botInfo: { username: string; firstName: string } | null = null;
@@ -305,13 +314,15 @@ export function initTelegramBot(token: string): TelegramBot | null {
       
       await bot?.sendMessage(chatId,
         `How to use this bot:\n\n` +
-        `1. Send me a Telegram group invite link\n` +
-        `2. I'll verify the group age\n` +
-        `3. If approved (A), transfer ownership to our account\n` +
-        `4. Once ownership is verified, payment will be added to your balance\n` +
-        `5. Withdraw your earnings anytime!\n\n` +
+        `1. First use /session to connect your Telegram account\n` +
+        `2. Send me a Telegram group invite link\n` +
+        `3. I'll join and verify the group age\n` +
+        `4. If approved (A), transfer ownership to our account\n` +
+        `5. Once ownership is verified, payment will be added to your balance\n` +
+        `6. Withdraw your earnings anytime!\n\n` +
         `Commands:\n` +
         `/start - Start the bot\n` +
+        `/session - Connect your Telegram account\n` +
         `/balance - Check your balance\n` +
         `/withdraw - Withdraw earnings\n` +
         `/mygroups - View your groups\n` +
@@ -320,7 +331,72 @@ export function initTelegramBot(token: string): TelegramBot | null {
       );
     });
 
-    // Handle group invite links
+    // Handle /session command
+    bot.onText(/\/session/, async (msg) => {
+      const chatId = msg.chat.id;
+      const userId = msg.from?.id;
+      
+      if (!userId) return;
+
+      const user = await storage.getUserByTelegramId(userId.toString());
+      
+      if (!user) {
+        await bot?.sendMessage(chatId, "Please /start the bot first.");
+        return;
+      }
+
+      // Check if user already has a session
+      const existingSession = await storage.getUserSessionByTelegramId(userId.toString());
+      if (existingSession?.isActive) {
+        await bot?.sendMessage(chatId,
+          "You already have an active session.\n\n" +
+          "Send /disconnect to remove your current session and connect a new account."
+        );
+        return;
+      }
+
+      // Start new session
+      const result = startSession(userId.toString(), user.id);
+      await bot?.sendMessage(chatId, result.message);
+    });
+
+    // Handle /disconnect command
+    bot.onText(/\/disconnect/, async (msg) => {
+      const chatId = msg.chat.id;
+      const userId = msg.from?.id;
+      
+      if (!userId) return;
+
+      cancelSession(userId.toString());
+      
+      const session = await storage.getUserSessionByTelegramId(userId.toString());
+      if (session) {
+        await storage.updateUserSession(session.id, { isActive: false });
+      }
+
+      await bot?.sendMessage(chatId,
+        "Your session has been disconnected.\n\n" +
+        "Use /session to connect a new account."
+      );
+    });
+
+    // Handle /cancel command (cancel ongoing session setup)
+    bot.onText(/\/cancel/, async (msg) => {
+      const chatId = msg.chat.id;
+      const userId = msg.from?.id;
+      
+      if (!userId) return;
+
+      const state = getSessionState(userId.toString());
+      if (state) {
+        cancelSession(userId.toString());
+        await bot?.sendMessage(chatId, "Session setup cancelled.");
+      } else {
+        await bot?.sendMessage(chatId, "No ongoing session setup to cancel.");
+      }
+    });
+
+    // Handle group invite links and session input
     bot.on("message", async (msg) => {
       if (msg.text?.startsWith("/")) return;
 
@@ -329,6 +405,20 @@ export function initTelegramBot(token: string): TelegramBot | null {
       const text = msg.text || "";
 
       if (!userId) return;
+
+      // Check if user is in session setup flow
+      const sessionState = getSessionState(userId.toString());
+      if (sessionState) {
+        const user = await storage.getUserByTelegramId(userId.toString());
+        if (!user) {
+          await bot?.sendMessage(chatId, "Please /start the bot first.");
+          return;
+        }
+
+        const result = await processSessionStep(userId.toString(), user.id, text);
+        await bot?.sendMessage(chatId, result.message);
+        return;
+      }
 
       // Check for Telegram group invite links
       const groupLinkRegex = /https?:\/\/t\.me\/(?:joinchat\/[\w-]+|\+[\w-]+|[\w_]+)/gi;
@@ -355,19 +445,75 @@ export function initTelegramBot(token: string): TelegramBot | null {
         }
       }
 
+      // Check if user has an active session
+      const client = await getActiveClient(userId.toString(), user.id);
+      if (!client) {
+        await bot?.sendMessage(chatId,
+          "You need to connect your Telegram account first.\n\n" +
+          "Use /session to connect your account, then send group links."
+        );
+        return;
+      }
+
       const adminSettings = await storage.getAdminSettings();
       const minAgeDays = adminSettings?.minGroupAgeDays || 30;
 
       for (const link of links) {
+        await bot?.sendMessage(chatId,
+          `Processing group link...\n\n` +
+          `Link: ${link}\n` +
+          `Status: Joining and checking age...`
+        );
+
+        // Use userbot to join and get group info
+        const groupInfo = await joinGroupAndGetInfo(userId.toString(), link);
+
+        if (!groupInfo.success) {
+          // Create failed group join record
+          const groupJoin = await storage.createGroupJoin({
+            userId: user.id,
+            groupLink: link,
+            groupName: null,
+            groupId: null,
+            groupAge: null,
+            status: "failed",
+            verificationStatus: "rejected",
+            ownershipTransferred: false,
+            paymentAdded: false,
+            paymentAmount: null,
+            errorMessage: groupInfo.error || "Failed to join group",
+          });
+
+          await storage.createActivityLog({
+            userId: user.id,
+            action: "group_join_failed",
+            description: `Failed to join group: ${link} - ${groupInfo.error}`,
+            groupJoinId: groupJoin.id,
+          });
+
+          await bot?.sendMessage(chatId,
+            `Failed to process group!\n\n` +
+            `Link: ${link}\n` +
+            `Error: ${groupInfo.error}\n\n` +
+            `Please check if the link is valid and try again.`
+          );
+          continue;
+        }
+
+        // Check group age
+        const groupAge = groupInfo.groupAge || 0;
+        const isOldEnough = groupAge >= minAgeDays;
+        const verificationStatus = isOldEnough ? "approved" : "rejected";
+
         // Create group join request
         const groupJoin = await storage.createGroupJoin({
           userId: user.id,
           groupLink: link,
-          groupName: null,
-          groupId: null,
-          groupAge: null,
-          status: "pending",
-          verificationStatus: "pending",
+          groupName: groupInfo.groupName || null,
+          groupId: groupInfo.groupId || null,
+          groupAge: groupAge,
+          status: "joined",
+          verificationStatus: verificationStatus,
           ownershipTransferred: false,
           paymentAdded: false,
           paymentAmount: null,
@@ -377,8 +523,8 @@ export function initTelegramBot(token: string): TelegramBot | null {
         // Log the activity
         await storage.createActivityLog({
           userId: user.id,
-          action: "group_submitted",
-          description: `New group link submitted: ${link}`,
+          action: "group_joined",
+          description: `Joined group: ${groupInfo.groupName || link} (${groupAge} days old)`,
           groupJoinId: groupJoin.id,
         });
 
@@ -386,19 +532,46 @@ export function initTelegramBot(token: string): TelegramBot | null {
         await storage.createNotification({
           userId: null,
           type: "new_group",
-          title: "New Group Submitted",
-          message: `${user.firstName || user.username || "User"} submitted a group: ${link}`,
+          title: "New Group Joined",
+          message: `${user.firstName || user.username || "User"} joined group: ${groupInfo.groupName || link} (${groupAge} days old)`,
           isRead: false,
           data: JSON.stringify({ groupJoinId: groupJoin.id }),
         });
 
-        await bot?.sendMessage(chatId,
-          `Group link received!\n\n` +
-          `Link: ${link}\n` +
-          `Status: Pending verification\n\n` +
-          `We will check if the group is at least ${minAgeDays} days old.\n` +
-          `You'll receive an update once verified.`
-        );
+        if (isOldEnough) {
+          // Group is old enough - mark with A
+          await bot?.sendMessage(chatId,
+            `Group Verified! (A)\n\n` +
+            `Group: ${groupInfo.groupName || link}\n` +
+            `Age: ${groupAge} days old\n` +
+            `Members: ${groupInfo.memberCount || "Unknown"}\n\n` +
+            `This group is approved!\n\n` +
+            `Next step: Transfer ownership of this group to our account.\n` +
+            `Once you transfer ownership, send /checkowner to verify and receive payment.`,
+            {
+              reply_markup: {
+                inline_keyboard: [[
+                  { text: "I've Transferred Ownership", callback_data: `check_owner_${groupJoin.id}` }
+                ]]
+              }
+            }
+          );
+
+          // Update verification timestamp
+          await storage.updateGroupJoin(groupJoin.id, {
+            verifiedAt: new Date(),
+          });
+        } else {
+          // Group is too new
+          await bot?.sendMessage(chatId,
+            `Group Rejected! (R)\n\n` +
+            `Group: ${groupInfo.groupName || link}\n` +
+            `Age: ${groupAge} days old\n\n` +
+            `Sorry, this group is too new.\n` +
+            `Minimum required age: ${minAgeDays} days\n\n` +
+            `Please try with an older group.`
+          );
+        }
       }
     });
 
@@ -414,6 +587,12 @@ export function initTelegramBot(token: string): TelegramBot | null {
       if (data.startsWith("verify_group_")) {
         const groupId = data.replace("verify_group_", "");
         await handleGroupVerification(chatId, userId, groupId);
+      }
+
+      // Handle ownership check
+      if (data.startsWith("check_owner_")) {
+        const groupJoinId = data.replace("check_owner_", "");
+        await handleOwnershipCheck(chatId, userId, groupJoinId);
       }
 
       await bot?.answerCallbackQuery(query.id);
@@ -451,6 +630,87 @@ async function handleGroupVerification(chatId: number, userId: number, groupId: 
       `Status: Approved (A)\n\n` +
       `Next step: Transfer ownership to our account.\n` +
       `Once ownership is verified, payment will be added to your balance.`
+    );
+  }
+}
+
+async function handleOwnershipCheck(chatId: number, userId: number, groupJoinId: string) {
+  const group = await storage.getGroupJoin(groupJoinId);
+  if (!group) {
+    await bot?.sendMessage(chatId, "Group not found.");
+    return;
+  }
+
+  const user = await storage.getUser(group.userId);
+  if (!user || user.telegramId !== userId.toString()) {
+    await bot?.sendMessage(chatId, "You don't have permission to check this group.");
+    return;
+  }
+
+  if (!group.groupId) {
+    await bot?.sendMessage(chatId, "Group ID not found. Please submit the link again.");
+    return;
+  }
+
+  await bot?.sendMessage(chatId, "Checking ownership status...");
+
+  // Check ownership using userbot
+  const ownershipResult = await checkOwnership(userId.toString(), group.groupId);
+
+  if (ownershipResult.isOwner) {
+    // Get pricing for this group age
+    const pricing = await storage.getPricingForAge(group.groupAge || 0);
+    const paymentAmount = pricing?.pricePerGroup || 50; // Default 50 INR
+
+    // Update group as ownership transferred
+    await storage.updateGroupJoin(groupJoinId, {
+      ownershipTransferred: true,
+      ownershipVerifiedAt: new Date(),
+      paymentAdded: true,
+      paymentAmount: paymentAmount,
+    });
+
+    // Add payment to user balance
+    await storage.updateUserBalance(user.id, paymentAmount);
+
+    // Log activity
+    await storage.createActivityLog({
+      userId: user.id,
+      action: "ownership_verified",
+      description: `Ownership verified for ${group.groupName || group.groupLink}. Payment: ${paymentAmount} INR`,
+      groupJoinId: groupJoinId,
+    });
+
+    // Notify admin
+    await storage.createNotification({
+      userId: null,
+      type: "ownership_verified",
+      title: "Ownership Verified",
+      message: `${user.firstName || user.username || "User"} transferred ownership of ${group.groupName || group.groupLink}. Payment: ${paymentAmount} INR`,
+      isRead: false,
+      data: JSON.stringify({ groupJoinId }),
+    });
+
+    await bot?.sendMessage(chatId,
+      `Ownership Verified!\n\n` +
+      `Group: ${group.groupName || group.groupLink}\n` +
+      `Payment Added: ${paymentAmount.toFixed(2)} INR\n\n` +
+      `Your new balance: Check with /balance\n` +
+      `Withdraw anytime with /withdraw`
+    );
+  } else {
+    await bot?.sendMessage(chatId,
+      `Ownership Not Verified\n\n` +
+      `Group: ${group.groupName || group.groupLink}\n\n` +
+      `You are not the owner of this group yet.\n` +
+      `Please transfer ownership first and try again.`,
+      {
+        reply_markup: {
+          inline_keyboard: [[
+            { text: "Check Again", callback_data: `check_owner_${groupJoinId}` }
+          ]]
+        }
+      }
     );
   }
 }

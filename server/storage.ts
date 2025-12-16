@@ -1,5 +1,5 @@
 import { 
-  users, groupJoins, botSettings, activityLogs, pricingSettings, withdrawals, adminSettings, notifications,
+  users, groupJoins, botSettings, activityLogs, pricingSettings, withdrawals, adminSettings, notifications, userSessions,
   type User, type InsertUser,
   type GroupJoin, type InsertGroupJoin,
   type BotSettings, type InsertBotSettings,
@@ -7,7 +7,8 @@ import {
   type PricingSettings, type InsertPricingSettings,
   type Withdrawal, type InsertWithdrawal,
   type AdminSettings, type InsertAdminSettings,
-  type Notification, type InsertNotification
+  type Notification, type InsertNotification,
+  type UserSession, type InsertUserSession
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, sql, isNull, or, lte } from "drizzle-orm";
@@ -68,6 +69,13 @@ export interface IStorage {
   getActivityLogs(userId: string, limit?: number): Promise<ActivityLog[]>;
   getAllActivityLogs(limit?: number): Promise<ActivityLog[]>;
   createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
+
+  // User Sessions
+  getUserSession(userId: string): Promise<UserSession | undefined>;
+  getUserSessionByTelegramId(telegramId: string): Promise<UserSession | undefined>;
+  createUserSession(session: InsertUserSession): Promise<UserSession>;
+  updateUserSession(id: string, updates: Partial<UserSession>): Promise<UserSession | undefined>;
+  deleteUserSession(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -323,6 +331,35 @@ export class DatabaseStorage implements IStorage {
   async createActivityLog(insertLog: InsertActivityLog): Promise<ActivityLog> {
     const [log] = await db.insert(activityLogs).values(insertLog).returning();
     return log;
+  }
+
+  // User Sessions
+  async getUserSession(userId: string): Promise<UserSession | undefined> {
+    const [session] = await db.select().from(userSessions).where(eq(userSessions.userId, userId));
+    return session || undefined;
+  }
+
+  async getUserSessionByTelegramId(telegramId: string): Promise<UserSession | undefined> {
+    const [session] = await db.select().from(userSessions).where(eq(userSessions.telegramId, telegramId));
+    return session || undefined;
+  }
+
+  async createUserSession(insertSession: InsertUserSession): Promise<UserSession> {
+    const [session] = await db.insert(userSessions).values(insertSession).returning();
+    return session;
+  }
+
+  async updateUserSession(id: string, updates: Partial<UserSession>): Promise<UserSession | undefined> {
+    const [updated] = await db.update(userSessions)
+      .set(updates)
+      .where(eq(userSessions.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteUserSession(id: string): Promise<boolean> {
+    await db.delete(userSessions).where(eq(userSessions.id, id));
+    return true;
   }
 }
 

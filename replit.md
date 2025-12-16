@@ -39,6 +39,29 @@ Core tables:
 - `groupJoins`: Tracks group invite links and their status (pending, joined, verified, failed)
 - `botSettings`: Per-user bot configuration (welcome messages, auto-join settings)
 - `activityLogs`: Audit trail of bot actions
+- `userSessions`: Encrypted Telegram userbot sessions for API access
+
+### Userbot Session Feature
+The bot supports a userbot feature that allows users to connect their Telegram account:
+1. User sends `/session` command
+2. Bot asks for API ID (from my.telegram.org)
+3. Bot asks for API Hash
+4. Bot asks for phone number with country code
+5. Bot sends OTP to user's Telegram and asks for the code
+6. If 2FA is enabled, asks for password
+7. Session is saved encrypted in database
+
+Once connected, when users send group links:
+- Userbot joins the group using the connected account
+- Checks the group age automatically
+- If group is old enough (marked with "A"), asks user to transfer ownership
+- When ownership is verified, adds payment to user's balance
+
+Security:
+- API credentials are encrypted with AES-256 using random IV
+- SESSION_SECRET must be at least 32 characters
+- User ID validation prevents session hijacking
+- Session status tracking with auto-deactivation on errors
 
 ### Authentication Flow
 1. User clicks Telegram Login Widget on login page
