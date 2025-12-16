@@ -92,6 +92,7 @@ export const adminSettings = pgTable("admin_settings", {
   welcomeMessage: text("welcome_message").default("Welcome! Please join our channel first to use this bot."),
   minGroupAgeDays: integer("min_group_age_days").notNull().default(30),
   adminPhoneNumber: text("admin_phone_number"),
+  adminUsername: text("admin_username"),
   adminPassword: text("admin_password"),
   twilioAccountSid: text("twilio_account_sid"),
   twilioAuthToken: text("twilio_auth_token"),

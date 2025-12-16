@@ -8,6 +8,7 @@ import crypto from "crypto";
 import bcrypt from "bcryptjs";
 
 const otpStore: Map<string, { otp: string; expiry: number; phoneNumber: string }> = new Map();
+const registrationStore: Map<string, { phoneNumber: string; verified: boolean; expiry: number }> = new Map();
 
 async function sendOtpViaTwilio(phoneNumber: string, otp: string, settings: any): Promise<boolean> {
   try {
@@ -175,14 +176,175 @@ export async function registerRoutes(
     }
   });
 
-  // Simple username/password login
+  // ============ MULTI-STEP REGISTRATION/LOGIN ============
+
+  // Step 1: Request OTP for registration
+  app.post("/api/auth/register/request-otp", async (req, res) => {
+    try {
+      const { phoneNumber } = req.body;
+      
+      if (!phoneNumber) {
+        return res.status(400).json({ error: "Phone number required" });
+      }
+
+      const settings = await storage.getAdminSettings();
+      
+      if (!settings?.twilioAccountSid || !settings?.twilioAuthToken || !settings?.twilioPhoneNumber) {
+        // For dev mode, skip Twilio and auto-generate OTP
+        const otp = generateOtp();
+        const sessionId = crypto.randomBytes(16).toString("hex");
+        
+        otpStore.set(sessionId, {
+          otp,
+          expiry: Date.now() + 5 * 60 * 1000,
+          phoneNumber,
+        });
+        
+        console.log(`DEV MODE - OTP for ${phoneNumber}: ${otp}`);
+        return res.json({ sessionId, message: "OTP sent (dev mode - check console)", devOtp: otp });
+      }
+
+      const otp = generateOtp();
+      const sessionId = crypto.randomBytes(16).toString("hex");
+      
+      otpStore.set(sessionId, {
+        otp,
+        expiry: Date.now() + 5 * 60 * 1000,
+        phoneNumber,
+      });
+
+      const sent = await sendOtpViaTwilio(phoneNumber, otp, settings);
+      if (!sent) {
+        return res.status(500).json({ error: "Failed to send OTP" });
+      }
+
+      res.json({ sessionId, message: "OTP sent" });
+    } catch (error) {
+      console.error("Request OTP error:", error);
+      res.status(500).json({ error: "Failed to request OTP" });
+    }
+  });
+
+  // Step 2: Verify OTP
+  app.post("/api/auth/register/verify-otp", async (req, res) => {
+    try {
+      const { sessionId, otp } = req.body;
+      
+      const otpData = otpStore.get(sessionId);
+      if (!otpData) {
+        return res.status(401).json({ error: "Session expired" });
+      }
+
+      if (Date.now() > otpData.expiry) {
+        otpStore.delete(sessionId);
+        return res.status(401).json({ error: "OTP expired" });
+      }
+
+      if (otpData.otp !== otp) {
+        return res.status(401).json({ error: "Invalid OTP" });
+      }
+
+      // Mark as verified and store for registration
+      registrationStore.set(sessionId, {
+        phoneNumber: otpData.phoneNumber,
+        verified: true,
+        expiry: Date.now() + 10 * 60 * 1000, // 10 minutes to complete registration
+      });
+
+      otpStore.delete(sessionId);
+      res.json({ success: true, message: "OTP verified" });
+    } catch (error) {
+      console.error("Verify OTP error:", error);
+      res.status(500).json({ error: "Failed to verify OTP" });
+    }
+  });
+
+  // Step 3 & 4: Complete registration with username and password
+  app.post("/api/auth/register/complete", async (req, res) => {
+    try {
+      const { sessionId, username, password } = req.body;
+      
+      if (!username || !password) {
+        return res.status(400).json({ error: "Username and password required" });
+      }
+
+      const regData = registrationStore.get(sessionId);
+      if (!regData || !regData.verified) {
+        return res.status(401).json({ error: "Please verify OTP first" });
+      }
+
+      if (Date.now() > regData.expiry) {
+        registrationStore.delete(sessionId);
+        return res.status(401).json({ error: "Registration session expired" });
+      }
+
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // Find or create user by phone number
+      let user = await storage.getUserByTelegramId(regData.phoneNumber);
+      
+      if (!user) {
+        user = await storage.createUser({
+          telegramId: regData.phoneNumber,
+          username: username,
+          firstName: username,
+          lastName: null,
+          photoUrl: null,
+          authDate: Math.floor(Date.now() / 1000),
+          balance: 0,
+          isAdmin: true,
+          channelVerified: true,
+        });
+
+        await storage.createBotSettings({
+          userId: user.id,
+          welcomeMessage: "Welcome! Send me a group invite link and I will track it for you.",
+          verificationMessage: "Verification complete!",
+          autoJoin: true,
+          notifyOnJoin: true,
+        });
+      }
+
+      // Store password in admin settings
+      await storage.createOrUpdateAdminSettings({
+        adminPhoneNumber: regData.phoneNumber,
+        adminPassword: hashedPassword,
+        adminUsername: username,
+      });
+
+      registrationStore.delete(sessionId);
+      req.session.userId = user.id;
+      res.json({ success: true, user });
+    } catch (error) {
+      console.error("Complete registration error:", error);
+      res.status(500).json({ error: "Failed to complete registration" });
+    }
+  });
+
+  // Login with username and password (for returning users)
   app.post("/api/auth/login", async (req, res) => {
     try {
       const { username, password } = req.body;
       
-      // Simple admin credentials check
+      const settings = await storage.getAdminSettings();
+      
+      if (settings?.adminUsername && settings?.adminPassword) {
+        if (username === settings.adminUsername) {
+          const validPassword = await bcrypt.compare(password, settings.adminPassword);
+          if (validPassword) {
+            const user = await storage.getUserByTelegramId(settings.adminPhoneNumber || "admin");
+            if (user) {
+              req.session.userId = user.id;
+              return res.json({ user });
+            }
+          }
+        }
+        return res.status(401).json({ error: "Invalid username or password" });
+      }
+      
+      // Fallback to simple admin credentials
       if (username === "admin" && password === "admin123") {
-        // Find or create admin user
         let user = await storage.getUserByTelegramId("admin");
         
         if (!user) {
@@ -208,13 +370,26 @@ export async function registerRoutes(
         }
         
         req.session.userId = user.id;
-        res.json({ user });
-      } else {
-        return res.status(401).json({ error: "Invalid username or password" });
+        return res.json({ user });
       }
+      
+      return res.status(401).json({ error: "Invalid username or password" });
     } catch (error) {
       console.error("Login error:", error);
       res.status(500).json({ error: "Login failed" });
+    }
+  });
+  
+  // Check if user is already registered
+  app.get("/api/auth/check-registered", async (req, res) => {
+    try {
+      const settings = await storage.getAdminSettings();
+      res.json({
+        isRegistered: !!(settings?.adminUsername && settings?.adminPassword),
+        hasTwilio: !!(settings?.twilioAccountSid),
+      });
+    } catch (error) {
+      res.json({ isRegistered: false, hasTwilio: false });
     }
   });
 
