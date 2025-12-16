@@ -23,6 +23,65 @@ const pendingSessions: Map<string, {
   userId?: string;
 }> = new Map();
 
+// Estimate group creation date from Telegram channel/chat ID
+// Telegram IDs are sequential, so we can estimate creation date from known reference points
+function estimateGroupAgeFromId(chatId: bigInt.BigInteger | number | string): number {
+  const id = typeof chatId === 'string' ? BigInt(chatId.replace('-100', '').replace('-', '')) : 
+             typeof chatId === 'number' ? BigInt(Math.abs(chatId)) :
+             chatId.valueOf ? BigInt(String(chatId.valueOf()).replace('-100', '').replace('-', '')) : BigInt(0);
+  
+  // Known reference points for Telegram channel IDs (approximate)
+  // These are based on known channels and their creation dates
+  const referencePoints = [
+    { id: BigInt(1000000000), date: new Date('2015-06-01') },   // ~June 2015
+    { id: BigInt(1100000000), date: new Date('2016-01-01') },   // ~Jan 2016
+    { id: BigInt(1200000000), date: new Date('2016-08-01') },   // ~Aug 2016
+    { id: BigInt(1300000000), date: new Date('2017-03-01') },   // ~Mar 2017
+    { id: BigInt(1400000000), date: new Date('2018-01-01') },   // ~Jan 2018
+    { id: BigInt(1500000000), date: new Date('2019-01-01') },   // ~Jan 2019
+    { id: BigInt(1600000000), date: new Date('2020-01-01') },   // ~Jan 2020
+    { id: BigInt(1700000000), date: new Date('2021-01-01') },   // ~Jan 2021
+    { id: BigInt(1800000000), date: new Date('2022-01-01') },   // ~Jan 2022
+    { id: BigInt(1900000000), date: new Date('2023-01-01') },   // ~Jan 2023
+    { id: BigInt(2000000000), date: new Date('2024-01-01') },   // ~Jan 2024
+    { id: BigInt(2100000000), date: new Date('2024-12-01') },   // ~Dec 2024
+  ];
+  
+  // Find the closest reference points
+  let lowerRef = referencePoints[0];
+  let upperRef = referencePoints[referencePoints.length - 1];
+  
+  for (let i = 0; i < referencePoints.length - 1; i++) {
+    if (id >= referencePoints[i].id && id < referencePoints[i + 1].id) {
+      lowerRef = referencePoints[i];
+      upperRef = referencePoints[i + 1];
+      break;
+    }
+  }
+  
+  // If ID is lower than our first reference, it's a very old group
+  if (id < referencePoints[0].id) {
+    const estimatedDate = new Date('2014-01-01');
+    const now = new Date();
+    return Math.floor((now.getTime() - estimatedDate.getTime()) / (1000 * 60 * 60 * 24));
+  }
+  
+  // If ID is higher than our last reference, it's a new group
+  if (id > referencePoints[referencePoints.length - 1].id) {
+    return 0;
+  }
+  
+  // Linear interpolation between reference points
+  const idRange = Number(upperRef.id - lowerRef.id);
+  const timeRange = upperRef.date.getTime() - lowerRef.date.getTime();
+  const idOffset = Number(id - lowerRef.id);
+  const estimatedTime = lowerRef.date.getTime() + (idOffset / idRange) * timeRange;
+  const estimatedDate = new Date(estimatedTime);
+  
+  const now = new Date();
+  return Math.floor((now.getTime() - estimatedDate.getTime()) / (1000 * 60 * 60 * 24));
+}
+
 function encrypt(text: string): string {
   const key = getEncryptionKey();
   const iv = CryptoJS.lib.WordArray.random(16);
@@ -424,11 +483,22 @@ export async function joinGroupAndGetInfo(
         memberCount = (chat as any).participantsCount || 0;
       }
       
+      // First try to get age from chat.date
       const creationDate = (chat as any).date;
       if (creationDate) {
         const createdAt = new Date(creationDate * 1000);
         const now = new Date();
         groupAge = Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
+      }
+      
+      // If age is 0 or too low (less than 30 days), estimate from ID
+      // This is because chat.date often returns join date, not creation date
+      if (groupAge < 30) {
+        const estimatedAge = estimateGroupAgeFromId(chat.id);
+        if (estimatedAge > groupAge) {
+          groupAge = estimatedAge;
+          console.log(`Group ${groupName}: Using estimated age ${groupAge} days from ID ${chat.id}`);
+        }
       }
     }
     
