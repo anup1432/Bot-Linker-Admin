@@ -1,184 +1,138 @@
-import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, boolean, real } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// Users table - stores Telegram authenticated users
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  telegramId: text("telegram_id").notNull().unique(),
-  username: text("username"),
-  firstName: text("first_name"),
-  lastName: text("last_name"),
-  photoUrl: text("photo_url"),
-  authDate: integer("auth_date"),
-  balance: real("balance").notNull().default(0),
-  isAdmin: boolean("is_admin").notNull().default(false),
-  channelVerified: boolean("channel_verified").notNull().default(false),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export type User = {
+  id: string;
+  telegramId: string;
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  photoUrl: string | null;
+  authDate: number | null;
+  balance: number;
+  isAdmin: boolean;
+  channelVerified: boolean;
+  createdAt: Date;
+};
 
-export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
+export type InsertUser = Partial<Omit<User, 'id' | 'createdAt'>> & { telegramId: string };
 
-// Group join requests - tracks groups sent to the bot
-export const groupJoins = pgTable("group_joins", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  orderId: integer("order_id"),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  groupLink: text("group_link").notNull(),
-  groupName: text("group_name"),
-  groupId: text("group_id"),
-  groupAge: integer("group_age_days"),
-  status: text("status").notNull().default("pending"),
-  verificationStatus: text("verification_status").default("pending"),
-  ownershipTransferred: boolean("ownership_transferred").notNull().default(false),
-  paymentAdded: boolean("payment_added").notNull().default(false),
-  paymentAmount: real("payment_amount"),
-  joinedAt: timestamp("joined_at"),
-  verifiedAt: timestamp("verified_at"),
-  ownershipVerifiedAt: timestamp("ownership_verified_at"),
-  errorMessage: text("error_message"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export type GroupJoin = {
+  id: string;
+  orderId: number | null;
+  userId: string;
+  groupLink: string;
+  groupName: string | null;
+  groupId: string | null;
+  groupAge: number | null;
+  status: string;
+  verificationStatus: string | null;
+  ownershipTransferred: boolean;
+  paymentAdded: boolean;
+  paymentAmount: number | null;
+  joinedAt: Date | null;
+  verifiedAt: Date | null;
+  ownershipVerifiedAt: Date | null;
+  errorMessage: string | null;
+  createdAt: Date;
+};
 
-export const insertGroupJoinSchema = createInsertSchema(groupJoins).omit({ 
-  id: true, 
-  orderId: true,
-  joinedAt: true, 
-  verifiedAt: true, 
-  ownershipVerifiedAt: true,
-  createdAt: true 
-});
-export type InsertGroupJoin = z.infer<typeof insertGroupJoinSchema>;
-export type GroupJoin = typeof groupJoins.$inferSelect;
+export type InsertGroupJoin = Partial<Omit<GroupJoin, 'id' | 'orderId' | 'joinedAt' | 'verifiedAt' | 'ownershipVerifiedAt' | 'createdAt'>> & { userId: string; groupLink: string };
 
-// Pricing settings - price based on group age
-export const pricingSettings = pgTable("pricing_settings", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  minAgeDays: integer("min_age_days").notNull(),
-  maxAgeDays: integer("max_age_days"),
-  pricePerGroup: real("price_per_group").notNull(),
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export type PricingSettings = {
+  id: string;
+  minAgeDays: number;
+  maxAgeDays: number | null;
+  pricePerGroup: number;
+  isActive: boolean;
+  createdAt: Date;
+};
 
-export const insertPricingSettingsSchema = createInsertSchema(pricingSettings).omit({ id: true, createdAt: true });
-export type InsertPricingSettings = z.infer<typeof insertPricingSettingsSchema>;
-export type PricingSettings = typeof pricingSettings.$inferSelect;
+export type InsertPricingSettings = Partial<Omit<PricingSettings, 'id' | 'createdAt'>> & { minAgeDays: number; pricePerGroup: number };
 
-// Withdrawals - user withdrawal requests
-export const withdrawals = pgTable("withdrawals", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  amount: real("amount").notNull(),
-  paymentMethod: text("payment_method").notNull(),
-  paymentDetails: text("payment_details").notNull(),
-  status: text("status").notNull().default("pending"),
-  processedAt: timestamp("processed_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export type Withdrawal = {
+  id: string;
+  userId: string;
+  amount: number;
+  paymentMethod: string;
+  paymentDetails: string;
+  status: string;
+  processedAt: Date | null;
+  createdAt: Date;
+};
 
-export const insertWithdrawalSchema = createInsertSchema(withdrawals).omit({ id: true, processedAt: true, createdAt: true });
-export type InsertWithdrawal = z.infer<typeof insertWithdrawalSchema>;
-export type Withdrawal = typeof withdrawals.$inferSelect;
+export type InsertWithdrawal = Partial<Omit<Withdrawal, 'id' | 'processedAt' | 'createdAt'>> & { userId: string; amount: number; paymentMethod: string; paymentDetails: string };
 
-// Admin settings - global settings
-export const adminSettings = pgTable("admin_settings", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  requiredChannelId: text("required_channel_id"),
-  requiredChannelUsername: text("required_channel_username"),
-  welcomeMessage: text("welcome_message").default("Welcome! Please join our channel first to use this bot."),
-  minGroupAgeDays: integer("min_group_age_days").notNull().default(30),
-  adminPhoneNumber: text("admin_phone_number"),
-  adminUsername: text("admin_username"),
-  adminPassword: text("admin_password"),
-  twilioAccountSid: text("twilio_account_sid"),
-  twilioAuthToken: text("twilio_auth_token"),
-  twilioPhoneNumber: text("twilio_phone_number"),
-  otpEnabled: boolean("otp_enabled").notNull().default(false),
-  twoStepEnabled: boolean("two_step_enabled").notNull().default(false),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+export type AdminSettings = {
+  id: string;
+  requiredChannelId: string | null;
+  requiredChannelUsername: string | null;
+  welcomeMessage: string | null;
+  minGroupAgeDays: number;
+  adminPhoneNumber: string | null;
+  adminUsername: string | null;
+  adminPassword: string | null;
+  twilioAccountSid: string | null;
+  twilioAuthToken: string | null;
+  twilioPhoneNumber: string | null;
+  otpEnabled: boolean;
+  twoStepEnabled: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
-export const insertAdminSettingsSchema = createInsertSchema(adminSettings).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertAdminSettings = z.infer<typeof insertAdminSettingsSchema>;
-export type AdminSettings = typeof adminSettings.$inferSelect;
+export type InsertAdminSettings = Partial<Omit<AdminSettings, 'id' | 'createdAt' | 'updatedAt'>>;
 
-// Bot settings
-export const botSettings = pgTable("bot_settings", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id).unique(),
-  welcomeMessage: text("welcome_message").default("Welcome! Send me a group invite link and I will join it for you."),
-  verificationMessage: text("verification_message").default("Verification complete!"),
-  autoJoin: boolean("auto_join").default(true),
-  notifyOnJoin: boolean("notify_on_join").default(true),
-});
+export type BotSettings = {
+  id: string;
+  userId: string;
+  welcomeMessage: string | null;
+  verificationMessage: string | null;
+  autoJoin: boolean | null;
+  notifyOnJoin: boolean | null;
+};
 
-export const insertBotSettingsSchema = createInsertSchema(botSettings).omit({ id: true });
-export type InsertBotSettings = z.infer<typeof insertBotSettingsSchema>;
-export type BotSettings = typeof botSettings.$inferSelect;
+export type InsertBotSettings = Partial<Omit<BotSettings, 'id'>> & { userId: string };
 
-// Activity log for dashboard
-export const activityLogs = pgTable("activity_logs", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  action: text("action").notNull(),
-  description: text("description").notNull(),
-  groupJoinId: varchar("group_join_id").references(() => groupJoins.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export type ActivityLog = {
+  id: string;
+  userId: string;
+  action: string;
+  description: string;
+  groupJoinId: string | null;
+  createdAt: Date;
+};
 
-export const insertActivityLogSchema = createInsertSchema(activityLogs).omit({ 
-  id: true, 
-  createdAt: true 
-});
-export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
-export type ActivityLog = typeof activityLogs.$inferSelect;
+export type InsertActivityLog = Partial<Omit<ActivityLog, 'id' | 'createdAt'>> & { userId: string; action: string; description: string };
 
-// Notifications for admin panel
-export const notifications = pgTable("notifications", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id"),
-  type: text("type").notNull(),
-  title: text("title").notNull(),
-  message: text("message").notNull(),
-  isRead: boolean("is_read").notNull().default(false),
-  data: text("data"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export type Notification = {
+  id: string;
+  userId: string | null;
+  type: string;
+  title: string;
+  message: string;
+  isRead: boolean;
+  data: string | null;
+  createdAt: Date;
+};
 
-export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
-export type InsertNotification = z.infer<typeof insertNotificationSchema>;
-export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = Partial<Omit<Notification, 'id' | 'createdAt'>> & { type: string; title: string; message: string };
 
-// User Sessions - stores Telegram userbot sessions (encrypted)
-export const userSessions = pgTable("user_sessions", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  telegramId: text("telegram_id").notNull(),
-  apiId: text("api_id").notNull(),
-  apiHash: text("api_hash").notNull(),
-  phoneNumber: text("phone_number"),
-  sessionString: text("session_string"),
-  isActive: boolean("is_active").notNull().default(false),
-  lastUsed: timestamp("last_used"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+export type UserSession = {
+  id: string;
+  userId: string;
+  telegramId: string;
+  apiId: string;
+  apiHash: string;
+  phoneNumber: string | null;
+  sessionString: string | null;
+  isActive: boolean;
+  lastUsed: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
-export const insertUserSessionSchema = createInsertSchema(userSessions).omit({ 
-  id: true, 
-  lastUsed: true,
-  createdAt: true, 
-  updatedAt: true 
-});
-export type InsertUserSession = z.infer<typeof insertUserSessionSchema>;
-export type UserSession = typeof userSessions.$inferSelect;
+export type InsertUserSession = Partial<Omit<UserSession, 'id' | 'lastUsed' | 'createdAt' | 'updatedAt'>> & { userId: string; telegramId: string; apiId: string; apiHash: string };
 
-// Telegram login data validation schema
 export const telegramLoginSchema = z.object({
   id: z.number(),
   first_name: z.string().optional(),
