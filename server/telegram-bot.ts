@@ -59,6 +59,8 @@ export function initTelegramBot(token: string): TelegramBot | null {
       if (!userId) return;
 
       const adminSettings = await storage.getAdminSettings();
+      const adminUserId = process.env.ADMIN_USER_ID;
+      const isAdminUser = adminUserId && userId.toString() === adminUserId;
       
       let user = await storage.getUserByTelegramId(userId.toString());
       if (!user) {
@@ -70,7 +72,7 @@ export function initTelegramBot(token: string): TelegramBot | null {
           photoUrl: null,
           authDate: Math.floor(Date.now() / 1000),
           balance: 0,
-          isAdmin: false,
+          isAdmin: isAdminUser || false,
           channelVerified: false,
         });
 
@@ -82,6 +84,9 @@ export function initTelegramBot(token: string): TelegramBot | null {
           isRead: false,
           data: JSON.stringify({ telegramId: userId }),
         });
+      } else if (isAdminUser && !user.isAdmin) {
+        await storage.updateUser(user.id, { isAdmin: true });
+        user.isAdmin = true;
       }
 
       const welcomeMessage = adminSettings?.welcomeMessage || 
