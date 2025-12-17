@@ -1,169 +1,51 @@
-import { 
-  connectMongoDB,
-  UserModel, GroupJoinModel, PricingSettingsModel, WithdrawalModel, 
-  AdminSettingsModel, BotSettingsModel, ActivityLogModel, NotificationModel, UserSessionModel,
-  type User, type InsertUser,
-  type GroupJoin, type InsertGroupJoin,
-  type BotSettings, type InsertBotSettings,
-  type ActivityLog, type InsertActivityLog,
-  type PricingSettings, type InsertPricingSettings,
-  type Withdrawal, type InsertWithdrawal,
-  type AdminSettings, type InsertAdminSettings,
-  type Notification, type InsertNotification,
-  type UserSession, type InsertUserSession
-} from "./mongodb";
-
-connectMongoDB().catch(console.error);
-
-function docToUser(doc: any): User {
-  return {
-    id: doc._id.toString(),
-    telegramId: doc.telegramId,
-    username: doc.username || null,
-    firstName: doc.firstName || null,
-    lastName: doc.lastName || null,
-    photoUrl: doc.photoUrl || null,
-    authDate: doc.authDate || null,
-    balance: doc.balance || 0,
-    isAdmin: doc.isAdmin || false,
-    channelVerified: doc.channelVerified || false,
-    createdAt: doc.createdAt,
-  };
-}
-
-function docToGroupJoin(doc: any): GroupJoin {
-  return {
-    id: doc._id.toString(),
-    orderId: doc.orderId || null,
-    userId: doc.userId.toString(),
-    groupLink: doc.groupLink,
-    groupName: doc.groupName || null,
-    groupId: doc.groupId || null,
-    groupAge: doc.groupAge || null,
-    status: doc.status || 'pending',
-    verificationStatus: doc.verificationStatus || null,
-    ownershipTransferred: doc.ownershipTransferred || false,
-    paymentAdded: doc.paymentAdded || false,
-    paymentAmount: doc.paymentAmount || null,
-    joinedAt: doc.joinedAt || null,
-    verifiedAt: doc.verifiedAt || null,
-    ownershipVerifiedAt: doc.ownershipVerifiedAt || null,
-    errorMessage: doc.errorMessage || null,
-    createdAt: doc.createdAt,
-  };
-}
-
-function docToPricingSettings(doc: any): PricingSettings {
-  return {
-    id: doc._id.toString(),
-    minAgeDays: doc.minAgeDays,
-    maxAgeDays: doc.maxAgeDays || null,
-    pricePerGroup: doc.pricePerGroup,
-    isActive: doc.isActive,
-    createdAt: doc.createdAt,
-  };
-}
-
-function docToWithdrawal(doc: any): Withdrawal {
-  return {
-    id: doc._id.toString(),
-    userId: doc.userId.toString(),
-    amount: doc.amount,
-    paymentMethod: doc.paymentMethod,
-    paymentDetails: doc.paymentDetails,
-    status: doc.status,
-    processedAt: doc.processedAt || null,
-    createdAt: doc.createdAt,
-  };
-}
-
-function docToAdminSettings(doc: any): AdminSettings {
-  return {
-    id: doc._id.toString(),
-    requiredChannelId: doc.requiredChannelId || null,
-    requiredChannelUsername: doc.requiredChannelUsername || null,
-    welcomeMessage: doc.welcomeMessage || null,
-    minGroupAgeDays: doc.minGroupAgeDays || 30,
-    adminPhoneNumber: doc.adminPhoneNumber || null,
-    adminUsername: doc.adminUsername || null,
-    adminPassword: doc.adminPassword || null,
-    twilioAccountSid: doc.twilioAccountSid || null,
-    twilioAuthToken: doc.twilioAuthToken || null,
-    twilioPhoneNumber: doc.twilioPhoneNumber || null,
-    otpEnabled: doc.otpEnabled || false,
-    twoStepEnabled: doc.twoStepEnabled || false,
-    createdAt: doc.createdAt,
-    updatedAt: doc.updatedAt,
-  };
-}
-
-function docToBotSettings(doc: any): BotSettings {
-  return {
-    id: doc._id.toString(),
-    userId: doc.userId.toString(),
-    welcomeMessage: doc.welcomeMessage || null,
-    verificationMessage: doc.verificationMessage || null,
-    autoJoin: doc.autoJoin ?? null,
-    notifyOnJoin: doc.notifyOnJoin ?? null,
-  };
-}
-
-function docToActivityLog(doc: any): ActivityLog {
-  return {
-    id: doc._id.toString(),
-    userId: doc.userId.toString(),
-    action: doc.action,
-    description: doc.description,
-    groupJoinId: doc.groupJoinId?.toString() || null,
-    createdAt: doc.createdAt,
-  };
-}
-
-function docToNotification(doc: any): Notification {
-  return {
-    id: doc._id.toString(),
-    userId: doc.userId || null,
-    type: doc.type,
-    title: doc.title,
-    message: doc.message,
-    isRead: doc.isRead,
-    data: doc.data || null,
-    createdAt: doc.createdAt,
-  };
-}
-
-function docToUserSession(doc: any): UserSession {
-  return {
-    id: doc._id.toString(),
-    userId: doc.userId.toString(),
-    telegramId: doc.telegramId,
-    apiId: doc.apiId,
-    apiHash: doc.apiHash,
-    phoneNumber: doc.phoneNumber || null,
-    sessionString: doc.sessionString || null,
-    isActive: doc.isActive,
-    lastUsed: doc.lastUsed || null,
-    createdAt: doc.createdAt,
-    updatedAt: doc.updatedAt,
-  };
-}
+import { db } from "./db";
+import { eq, desc, sql, and, lte, gte, or, isNull } from "drizzle-orm";
+import {
+  users,
+  groupJoins,
+  pricingSettings,
+  withdrawals,
+  adminSettings,
+  botSettings,
+  activityLogs,
+  notifications,
+  userSessions,
+  type User,
+  type InsertUser,
+  type GroupJoin,
+  type InsertGroupJoin,
+  type PricingSettings,
+  type InsertPricingSettings,
+  type Withdrawal,
+  type InsertWithdrawal,
+  type AdminSettings,
+  type InsertAdminSettings,
+  type BotSettings,
+  type InsertBotSettings,
+  type ActivityLog,
+  type InsertActivityLog,
+  type Notification,
+  type InsertNotification,
+  type UserSession,
+  type InsertUserSession,
+} from "@shared/schema";
 
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
+  getUser(id: number): Promise<User | undefined>;
   getUserByTelegramId(telegramId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
+  updateUser(id: number, updates: Partial<User>): Promise<User | undefined>;
   getAllUsers(): Promise<User[]>;
-  updateUserBalance(userId: string, amount: number): Promise<User | undefined>;
+  updateUserBalance(userId: number, amount: number): Promise<User | undefined>;
 
-  getGroupJoins(userId: string): Promise<GroupJoin[]>;
+  getGroupJoins(userId: number): Promise<GroupJoin[]>;
   getAllGroupJoins(): Promise<GroupJoin[]>;
-  getGroupJoin(id: string): Promise<GroupJoin | undefined>;
-  getRecentGroupJoins(userId: string, limit?: number): Promise<GroupJoin[]>;
+  getGroupJoin(id: number): Promise<GroupJoin | undefined>;
+  getRecentGroupJoins(userId: number, limit?: number): Promise<GroupJoin[]>;
   createGroupJoin(groupJoin: InsertGroupJoin): Promise<GroupJoin>;
-  updateGroupJoin(id: string, updates: Partial<GroupJoin>): Promise<GroupJoin | undefined>;
-  deleteGroupJoin(id: string): Promise<boolean>;
-  getGroupStats(userId: string): Promise<{
+  updateGroupJoin(id: number, updates: Partial<GroupJoin>): Promise<GroupJoin | undefined>;
+  deleteGroupJoin(id: number): Promise<boolean>;
+  getGroupStats(userId: number): Promise<{
     totalGroups: number;
     pendingJoins: number;
     verifiedToday: number;
@@ -173,132 +55,104 @@ export interface IStorage {
   getPricingSettings(): Promise<PricingSettings[]>;
   getPricingForAge(ageDays: number): Promise<PricingSettings | undefined>;
   createPricingSettings(settings: InsertPricingSettings): Promise<PricingSettings>;
-  updatePricingSettings(id: string, updates: Partial<PricingSettings>): Promise<PricingSettings | undefined>;
-  deletePricingSettings(id: string): Promise<boolean>;
+  updatePricingSettings(id: number, updates: Partial<PricingSettings>): Promise<PricingSettings | undefined>;
+  deletePricingSettings(id: number): Promise<boolean>;
 
-  getWithdrawals(userId: string): Promise<Withdrawal[]>;
+  getWithdrawals(userId: number): Promise<Withdrawal[]>;
   getAllWithdrawals(): Promise<Withdrawal[]>;
   createWithdrawal(withdrawal: InsertWithdrawal): Promise<Withdrawal>;
-  updateWithdrawal(id: string, updates: Partial<Withdrawal>): Promise<Withdrawal | undefined>;
+  updateWithdrawal(id: number, updates: Partial<Withdrawal>): Promise<Withdrawal | undefined>;
 
   getAdminSettings(): Promise<AdminSettings | undefined>;
   createOrUpdateAdminSettings(settings: InsertAdminSettings): Promise<AdminSettings>;
 
-  getNotifications(userId?: string): Promise<Notification[]>;
+  getNotifications(userId?: number): Promise<Notification[]>;
   createNotification(notification: InsertNotification): Promise<Notification>;
-  markNotificationRead(id: string): Promise<Notification | undefined>;
-  markAllNotificationsRead(userId?: string): Promise<void>;
+  markNotificationRead(id: number): Promise<Notification | undefined>;
+  markAllNotificationsRead(userId?: number): Promise<void>;
 
-  getBotSettings(userId: string): Promise<BotSettings | undefined>;
+  getBotSettings(userId: number): Promise<BotSettings | undefined>;
   createBotSettings(settings: InsertBotSettings): Promise<BotSettings>;
-  updateBotSettings(userId: string, updates: Partial<BotSettings>): Promise<BotSettings | undefined>;
+  updateBotSettings(userId: number, updates: Partial<BotSettings>): Promise<BotSettings | undefined>;
 
-  getActivityLogs(userId: string, limit?: number): Promise<ActivityLog[]>;
+  getActivityLogs(userId: number, limit?: number): Promise<ActivityLog[]>;
   getAllActivityLogs(limit?: number): Promise<ActivityLog[]>;
   createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
 
-  getUserSession(userId: string): Promise<UserSession | undefined>;
+  getUserSession(userId: number): Promise<UserSession | undefined>;
   getUserSessionByTelegramId(telegramId: string): Promise<UserSession | undefined>;
   createUserSession(session: InsertUserSession): Promise<UserSession>;
-  updateUserSession(id: string, updates: Partial<UserSession>): Promise<UserSession | undefined>;
-  deleteUserSession(id: string): Promise<boolean>;
+  updateUserSession(id: number, updates: Partial<UserSession>): Promise<UserSession | undefined>;
+  deleteUserSession(id: number): Promise<boolean>;
 }
 
-export class MongoStorage implements IStorage {
-  async getUser(id: string): Promise<User | undefined> {
-    try {
-      const doc = await UserModel.findById(id);
-      return doc ? docToUser(doc) : undefined;
-    } catch {
-      return undefined;
-    }
+export class PostgresStorage implements IStorage {
+  async getUser(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
 
   async getUserByTelegramId(telegramId: string): Promise<User | undefined> {
-    const doc = await UserModel.findOne({ telegramId });
-    return doc ? docToUser(doc) : undefined;
+    const [user] = await db.select().from(users).where(eq(users.telegramId, telegramId));
+    return user;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const doc = await UserModel.create(insertUser);
-    return docToUser(doc);
+    const [user] = await db.insert(users).values(insertUser).returning();
+    return user;
   }
 
-  async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
-    try {
-      const doc = await UserModel.findByIdAndUpdate(id, updates, { new: true });
-      return doc ? docToUser(doc) : undefined;
-    } catch {
-      return undefined;
-    }
+  async updateUser(id: number, updates: Partial<User>): Promise<User | undefined> {
+    const [user] = await db.update(users).set(updates).where(eq(users.id, id)).returning();
+    return user;
   }
 
   async getAllUsers(): Promise<User[]> {
-    const docs = await UserModel.find().sort({ createdAt: -1 });
-    return docs.map(docToUser);
+    return db.select().from(users).orderBy(desc(users.createdAt));
   }
 
-  async updateUserBalance(userId: string, amount: number): Promise<User | undefined> {
-    try {
-      const doc = await UserModel.findByIdAndUpdate(
-        userId,
-        { $inc: { balance: amount } },
-        { new: true }
-      );
-      return doc ? docToUser(doc) : undefined;
-    } catch {
-      return undefined;
-    }
+  async updateUserBalance(userId: number, amount: number): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({ balance: sql`${users.balance} + ${amount}` })
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
   }
 
-  async getGroupJoins(userId: string): Promise<GroupJoin[]> {
-    const docs = await GroupJoinModel.find({ userId }).sort({ createdAt: -1 });
-    return docs.map(docToGroupJoin);
+  async getGroupJoins(userId: number): Promise<GroupJoin[]> {
+    return db.select().from(groupJoins).where(eq(groupJoins.userId, userId)).orderBy(desc(groupJoins.createdAt));
   }
 
   async getAllGroupJoins(): Promise<GroupJoin[]> {
-    const docs = await GroupJoinModel.find().sort({ createdAt: -1 });
-    return docs.map(docToGroupJoin);
+    return db.select().from(groupJoins).orderBy(desc(groupJoins.createdAt));
   }
 
-  async getGroupJoin(id: string): Promise<GroupJoin | undefined> {
-    try {
-      const doc = await GroupJoinModel.findById(id);
-      return doc ? docToGroupJoin(doc) : undefined;
-    } catch {
-      return undefined;
-    }
+  async getGroupJoin(id: number): Promise<GroupJoin | undefined> {
+    const [group] = await db.select().from(groupJoins).where(eq(groupJoins.id, id));
+    return group;
   }
 
-  async getRecentGroupJoins(userId: string, limit: number = 10): Promise<GroupJoin[]> {
-    const docs = await GroupJoinModel.find({ userId }).sort({ createdAt: -1 }).limit(limit);
-    return docs.map(docToGroupJoin);
+  async getRecentGroupJoins(userId: number, limit: number = 10): Promise<GroupJoin[]> {
+    return db.select().from(groupJoins).where(eq(groupJoins.userId, userId)).orderBy(desc(groupJoins.createdAt)).limit(limit);
   }
 
   async createGroupJoin(insertGroupJoin: InsertGroupJoin): Promise<GroupJoin> {
-    const doc = await GroupJoinModel.create(insertGroupJoin as any);
-    return docToGroupJoin(doc);
+    const [group] = await db.insert(groupJoins).values(insertGroupJoin).returning();
+    return group;
   }
 
-  async updateGroupJoin(id: string, updates: Partial<GroupJoin>): Promise<GroupJoin | undefined> {
-    try {
-      const doc = await GroupJoinModel.findByIdAndUpdate(id, updates, { new: true });
-      return doc ? docToGroupJoin(doc) : undefined;
-    } catch {
-      return undefined;
-    }
+  async updateGroupJoin(id: number, updates: Partial<GroupJoin>): Promise<GroupJoin | undefined> {
+    const [group] = await db.update(groupJoins).set(updates).where(eq(groupJoins.id, id)).returning();
+    return group;
   }
 
-  async deleteGroupJoin(id: string): Promise<boolean> {
-    try {
-      await GroupJoinModel.findByIdAndDelete(id);
-      return true;
-    } catch {
-      return false;
-    }
+  async deleteGroupJoin(id: number): Promise<boolean> {
+    const result = await db.delete(groupJoins).where(eq(groupJoins.id, id));
+    return true;
   }
 
-  async getGroupStats(userId: string): Promise<{
+  async getGroupStats(userId: number): Promise<{
     totalGroups: number;
     pendingJoins: number;
     verifiedToday: number;
@@ -321,179 +175,163 @@ export class MongoStorage implements IStorage {
   }
 
   async getPricingSettings(): Promise<PricingSettings[]> {
-    const docs = await PricingSettingsModel.find({ isActive: true }).sort({ minAgeDays: 1 });
-    return docs.map(docToPricingSettings);
+    return db.select().from(pricingSettings).where(eq(pricingSettings.isActive, true)).orderBy(pricingSettings.minAgeDays);
   }
 
   async getPricingForAge(ageDays: number): Promise<PricingSettings | undefined> {
-    const doc = await PricingSettingsModel.findOne({
-      isActive: true,
-      minAgeDays: { $lte: ageDays },
-      $or: [
-        { maxAgeDays: null },
-        { maxAgeDays: { $gte: ageDays } }
-      ]
-    });
-    return doc ? docToPricingSettings(doc) : undefined;
+    const [pricing] = await db
+      .select()
+      .from(pricingSettings)
+      .where(
+        and(
+          eq(pricingSettings.isActive, true),
+          lte(pricingSettings.minAgeDays, ageDays),
+          or(isNull(pricingSettings.maxAgeDays), gte(pricingSettings.maxAgeDays, ageDays))
+        )
+      );
+    return pricing;
   }
 
   async createPricingSettings(settings: InsertPricingSettings): Promise<PricingSettings> {
-    const doc = await PricingSettingsModel.create(settings);
-    return docToPricingSettings(doc);
+    const [pricing] = await db.insert(pricingSettings).values(settings).returning();
+    return pricing;
   }
 
-  async updatePricingSettings(id: string, updates: Partial<PricingSettings>): Promise<PricingSettings | undefined> {
-    try {
-      const doc = await PricingSettingsModel.findByIdAndUpdate(id, updates, { new: true });
-      return doc ? docToPricingSettings(doc) : undefined;
-    } catch {
-      return undefined;
-    }
+  async updatePricingSettings(id: number, updates: Partial<PricingSettings>): Promise<PricingSettings | undefined> {
+    const [pricing] = await db.update(pricingSettings).set(updates).where(eq(pricingSettings.id, id)).returning();
+    return pricing;
   }
 
-  async deletePricingSettings(id: string): Promise<boolean> {
-    try {
-      await PricingSettingsModel.findByIdAndDelete(id);
-      return true;
-    } catch {
-      return false;
-    }
+  async deletePricingSettings(id: number): Promise<boolean> {
+    await db.delete(pricingSettings).where(eq(pricingSettings.id, id));
+    return true;
   }
 
-  async getWithdrawals(userId: string): Promise<Withdrawal[]> {
-    const docs = await WithdrawalModel.find({ userId }).sort({ createdAt: -1 });
-    return docs.map(docToWithdrawal);
+  async getWithdrawals(userId: number): Promise<Withdrawal[]> {
+    return db.select().from(withdrawals).where(eq(withdrawals.userId, userId)).orderBy(desc(withdrawals.createdAt));
   }
 
   async getAllWithdrawals(): Promise<Withdrawal[]> {
-    const docs = await WithdrawalModel.find().sort({ createdAt: -1 });
-    return docs.map(docToWithdrawal);
+    return db.select().from(withdrawals).orderBy(desc(withdrawals.createdAt));
   }
 
   async createWithdrawal(withdrawal: InsertWithdrawal): Promise<Withdrawal> {
-    const doc = await WithdrawalModel.create(withdrawal);
-    return docToWithdrawal(doc);
+    const [w] = await db.insert(withdrawals).values(withdrawal).returning();
+    return w;
   }
 
-  async updateWithdrawal(id: string, updates: Partial<Withdrawal>): Promise<Withdrawal | undefined> {
-    try {
-      const doc = await WithdrawalModel.findByIdAndUpdate(id, updates, { new: true });
-      return doc ? docToWithdrawal(doc) : undefined;
-    } catch {
-      return undefined;
-    }
+  async updateWithdrawal(id: number, updates: Partial<Withdrawal>): Promise<Withdrawal | undefined> {
+    const [w] = await db.update(withdrawals).set(updates).where(eq(withdrawals.id, id)).returning();
+    return w;
   }
 
   async getAdminSettings(): Promise<AdminSettings | undefined> {
-    const doc = await AdminSettingsModel.findOne();
-    return doc ? docToAdminSettings(doc) : undefined;
+    const [settings] = await db.select().from(adminSettings).limit(1);
+    return settings;
   }
 
   async createOrUpdateAdminSettings(settings: InsertAdminSettings): Promise<AdminSettings> {
-    const existing = await AdminSettingsModel.findOne();
+    const existing = await this.getAdminSettings();
     if (existing) {
-      const updated = await AdminSettingsModel.findByIdAndUpdate(
-        existing._id,
-        { ...settings, updatedAt: new Date() },
-        { new: true }
-      );
-      return docToAdminSettings(updated);
+      const [updated] = await db
+        .update(adminSettings)
+        .set({ ...settings, updatedAt: new Date() })
+        .where(eq(adminSettings.id, existing.id))
+        .returning();
+      return updated;
     }
-    const doc = await AdminSettingsModel.create(settings as any);
-    return docToAdminSettings(doc);
+    const [created] = await db.insert(adminSettings).values(settings).returning();
+    return created;
   }
 
-  async getNotifications(userId?: string): Promise<Notification[]> {
-    const query = userId ? { $or: [{ userId }, { userId: null }] } : {};
-    const docs = await NotificationModel.find(query).sort({ createdAt: -1 });
-    return docs.map(docToNotification);
+  async getNotifications(userId?: number): Promise<Notification[]> {
+    if (userId) {
+      return db
+        .select()
+        .from(notifications)
+        .where(or(eq(notifications.userId, userId), isNull(notifications.userId)))
+        .orderBy(desc(notifications.createdAt));
+    }
+    return db.select().from(notifications).orderBy(desc(notifications.createdAt));
   }
 
   async createNotification(notification: InsertNotification): Promise<Notification> {
-    const doc = await NotificationModel.create(notification);
-    return docToNotification(doc);
+    const [n] = await db.insert(notifications).values(notification).returning();
+    return n;
   }
 
-  async markNotificationRead(id: string): Promise<Notification | undefined> {
-    try {
-      const doc = await NotificationModel.findByIdAndUpdate(id, { isRead: true }, { new: true });
-      return doc ? docToNotification(doc) : undefined;
-    } catch {
-      return undefined;
+  async markNotificationRead(id: number): Promise<Notification | undefined> {
+    const [n] = await db.update(notifications).set({ isRead: true }).where(eq(notifications.id, id)).returning();
+    return n;
+  }
+
+  async markAllNotificationsRead(userId?: number): Promise<void> {
+    if (userId) {
+      await db
+        .update(notifications)
+        .set({ isRead: true })
+        .where(or(eq(notifications.userId, userId), isNull(notifications.userId)));
+    } else {
+      await db.update(notifications).set({ isRead: true });
     }
   }
 
-  async markAllNotificationsRead(userId?: string): Promise<void> {
-    const query = userId ? { $or: [{ userId }, { userId: null }] } : {};
-    await NotificationModel.updateMany(query, { isRead: true });
+  async getBotSettings(userId: number): Promise<BotSettings | undefined> {
+    const [settings] = await db.select().from(botSettings).where(eq(botSettings.userId, userId));
+    return settings;
   }
 
-  async getBotSettings(userId: string): Promise<BotSettings | undefined> {
-    const doc = await BotSettingsModel.findOne({ userId });
-    return doc ? docToBotSettings(doc) : undefined;
+  async createBotSettings(settings: InsertBotSettings): Promise<BotSettings> {
+    const [s] = await db.insert(botSettings).values(settings).returning();
+    return s;
   }
 
-  async createBotSettings(insertSettings: InsertBotSettings): Promise<BotSettings> {
-    const doc = await BotSettingsModel.create(insertSettings as any);
-    return docToBotSettings(doc);
+  async updateBotSettings(userId: number, updates: Partial<BotSettings>): Promise<BotSettings | undefined> {
+    const [s] = await db.update(botSettings).set(updates).where(eq(botSettings.userId, userId)).returning();
+    return s;
   }
 
-  async updateBotSettings(userId: string, updates: Partial<BotSettings>): Promise<BotSettings | undefined> {
-    const doc = await BotSettingsModel.findOneAndUpdate({ userId }, updates, { new: true });
-    return doc ? docToBotSettings(doc) : undefined;
-  }
-
-  async getActivityLogs(userId: string, limit: number = 20): Promise<ActivityLog[]> {
-    const docs = await ActivityLogModel.find({ userId }).sort({ createdAt: -1 }).limit(limit);
-    return docs.map(docToActivityLog);
+  async getActivityLogs(userId: number, limit: number = 20): Promise<ActivityLog[]> {
+    return db.select().from(activityLogs).where(eq(activityLogs.userId, userId)).orderBy(desc(activityLogs.createdAt)).limit(limit);
   }
 
   async getAllActivityLogs(limit: number = 50): Promise<ActivityLog[]> {
-    const docs = await ActivityLogModel.find().sort({ createdAt: -1 }).limit(limit);
-    return docs.map(docToActivityLog);
+    return db.select().from(activityLogs).orderBy(desc(activityLogs.createdAt)).limit(limit);
   }
 
-  async createActivityLog(insertLog: InsertActivityLog): Promise<ActivityLog> {
-    const doc = await ActivityLogModel.create(insertLog);
-    return docToActivityLog(doc);
+  async createActivityLog(log: InsertActivityLog): Promise<ActivityLog> {
+    const [l] = await db.insert(activityLogs).values(log).returning();
+    return l;
   }
 
-  async getUserSession(userId: string): Promise<UserSession | undefined> {
-    const doc = await UserSessionModel.findOne({ userId });
-    return doc ? docToUserSession(doc) : undefined;
+  async getUserSession(userId: number): Promise<UserSession | undefined> {
+    const [session] = await db.select().from(userSessions).where(eq(userSessions.userId, userId));
+    return session;
   }
 
   async getUserSessionByTelegramId(telegramId: string): Promise<UserSession | undefined> {
-    const doc = await UserSessionModel.findOne({ telegramId });
-    return doc ? docToUserSession(doc) : undefined;
+    const [session] = await db.select().from(userSessions).where(eq(userSessions.telegramId, telegramId));
+    return session;
   }
 
-  async createUserSession(insertSession: InsertUserSession): Promise<UserSession> {
-    const doc = await UserSessionModel.create(insertSession);
-    return docToUserSession(doc);
+  async createUserSession(session: InsertUserSession): Promise<UserSession> {
+    const [s] = await db.insert(userSessions).values(session).returning();
+    return s;
   }
 
-  async updateUserSession(id: string, updates: Partial<UserSession>): Promise<UserSession | undefined> {
-    try {
-      const doc = await UserSessionModel.findByIdAndUpdate(
-        id, 
-        { ...updates, updatedAt: new Date() }, 
-        { new: true }
-      );
-      return doc ? docToUserSession(doc) : undefined;
-    } catch {
-      return undefined;
-    }
+  async updateUserSession(id: number, updates: Partial<UserSession>): Promise<UserSession | undefined> {
+    const [s] = await db
+      .update(userSessions)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(userSessions.id, id))
+      .returning();
+    return s;
   }
 
-  async deleteUserSession(id: string): Promise<boolean> {
-    try {
-      await UserSessionModel.findByIdAndDelete(id);
-      return true;
-    } catch {
-      return false;
-    }
+  async deleteUserSession(id: number): Promise<boolean> {
+    await db.delete(userSessions).where(eq(userSessions.id, id));
+    return true;
   }
 }
 
-export const storage = new MongoStorage();
+export const storage = new PostgresStorage();

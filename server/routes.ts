@@ -1,11 +1,15 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import { pool } from "./db";
 import { storage } from "./storage";
 import { initTelegramBot, getBotInfo, sendMessageToUser } from "./telegram-bot";
 import { telegramLoginSchema } from "@shared/schema";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
+
+const PgStore = connectPgSimple(session);
 
 const otpStore: Map<string, { otp: string; expiry: number; phoneNumber: string }> = new Map();
 const registrationStore: Map<string, { phoneNumber: string; verified: boolean; expiry: number }> = new Map();
@@ -39,7 +43,7 @@ function generateOtp(): string {
 
 declare module "express-session" {
   interface SessionData {
-    userId?: string;
+    userId?: number;
   }
 }
 
@@ -87,6 +91,11 @@ export async function registerRoutes(
 ): Promise<Server> {
   app.use(
     session({
+      store: new PgStore({
+        pool,
+        tableName: "session",
+        createTableIfMissing: true,
+      }),
       secret: process.env.SESSION_SECRET || "telegram-bot-admin-secret",
       resave: false,
       saveUninitialized: false,
@@ -456,7 +465,7 @@ export async function registerRoutes(
 
   app.delete("/api/groups/:id", requireAuth, async (req, res) => {
     try {
-      const { id } = req.params;
+      const id = parseInt(req.params.id);
       const group = await storage.getGroupJoin(id);
       
       if (!group || group.userId !== req.session.userId) {
@@ -546,7 +555,7 @@ export async function registerRoutes(
 
   app.post("/api/notifications/:id/read", requireAuth, async (req, res) => {
     try {
-      const notification = await storage.markNotificationRead(req.params.id);
+      const notification = await storage.markNotificationRead(parseInt(req.params.id));
       res.json(notification);
     } catch (error) {
       res.status(500).json({ error: "Failed to mark notification read" });
@@ -601,7 +610,7 @@ export async function registerRoutes(
   app.patch("/api/admin/users/:id", requireAdmin, async (req, res) => {
     try {
       const { isAdmin, balance } = req.body;
-      const updated = await storage.updateUser(req.params.id, { isAdmin, balance });
+      const updated = await storage.updateUser(parseInt(req.params.id), { isAdmin, balance });
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update user" });
@@ -622,8 +631,8 @@ export async function registerRoutes(
   app.patch("/api/admin/groups/:id", requireAdmin, async (req, res) => {
     try {
       const { groupAge, verificationStatus, ownershipTransferred, paymentAmount, errorMessage } = req.body;
-      
-      const group = await storage.getGroupJoin(req.params.id);
+      const id = parseInt(req.params.id);
+      const group = await storage.getGroupJoin(id);
       if (!group) {
         return res.status(404).json({ error: "Group not found" });
       }
@@ -671,7 +680,7 @@ export async function registerRoutes(
       }
       if (errorMessage !== undefined) updates.errorMessage = errorMessage;
 
-      const updated = await storage.updateGroupJoin(req.params.id, updates);
+      const updated = await storage.updateGroupJoin(id, updates);
 
       // Notify user about status change
       const user = await storage.getUser(group.userId);
@@ -714,7 +723,7 @@ export async function registerRoutes(
   app.patch("/api/admin/withdrawals/:id", requireAdmin, async (req, res) => {
     try {
       const { status } = req.body;
-      const withdrawal = await storage.updateWithdrawal(req.params.id, {
+      const withdrawal = await storage.updateWithdrawal(parseInt(req.params.id), {
         status,
         processedAt: status === "completed" ? new Date() : undefined,
       });
@@ -775,7 +784,7 @@ export async function registerRoutes(
   app.patch("/api/admin/pricing/:id", requireAdmin, async (req, res) => {
     try {
       const { minAgeDays, maxAgeDays, pricePerGroup, isActive } = req.body;
-      const pricing = await storage.updatePricingSettings(req.params.id, {
+      const pricing = await storage.updatePricingSettings(parseInt(req.params.id), {
         minAgeDays,
         maxAgeDays,
         pricePerGroup,
@@ -789,7 +798,7 @@ export async function registerRoutes(
 
   app.delete("/api/admin/pricing/:id", requireAdmin, async (req, res) => {
     try {
-      await storage.deletePricingSettings(req.params.id);
+      await storage.deletePricingSettings(parseInt(req.params.id));
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete pricing" });
