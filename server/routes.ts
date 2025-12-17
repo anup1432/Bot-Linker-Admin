@@ -103,6 +103,11 @@ export async function registerRoutes(
     console.error("Failed to connect to MongoDB:", error);
   }
 
+  // Trust proxy for Render/production environments
+  if (process.env.NODE_ENV === "production") {
+    app.set("trust proxy", 1);
+  }
+
   app.use(
     session({
       store: new MemStore({
@@ -115,6 +120,7 @@ export async function registerRoutes(
         secure: process.env.NODE_ENV === "production",
         httpOnly: true,
         maxAge: 7 * 24 * 60 * 60 * 1000,
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       },
     })
   );
