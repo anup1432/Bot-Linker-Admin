@@ -210,6 +210,7 @@ const notificationSchema = new Schema<INotification>({
 });
 
 const userSessionSchema = new Schema<IUserSession>({
+  odId: { type: Number, default: () => Date.now() },
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   telegramId: { type: String, required: true },
   apiId: { type: String, required: true },

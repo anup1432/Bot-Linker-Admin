@@ -30,9 +30,9 @@ The frontend follows a page-based architecture with shared components. Key pages
 The server handles authentication verification using Telegram's HMAC-based login validation, manages user sessions, and provides CRUD operations for group joins and bot settings.
 
 ### Data Storage
-- **Database**: PostgreSQL with Drizzle ORM
-- **Schema Location**: `shared/schema.ts` (Drizzle table definitions and types)
-- **Connection**: Uses `DATABASE_URL` environment variable (automatically provided by Replit)
+- **Database**: MongoDB Atlas with Mongoose ODM
+- **Schema Location**: `server/models.ts` (Mongoose schema definitions)
+- **Connection**: Uses `MONGODB_URI` environment variable
 
 Core tables:
 - `users`: Telegram-authenticated users
@@ -104,9 +104,27 @@ Note: Twilio credentials and password hash are NEVER returned to the frontend fo
 - `zod` + `drizzle-zod`: Runtime validation with schema generation
 
 ### Environment Variables Required
-- `DATABASE_URL`: PostgreSQL connection string (automatically provided by Replit)
-- `TELEGRAM_BOT_TOKEN`: Telegram bot token (optional, for bot functionality)
+- `MONGODB_URI`: MongoDB Atlas connection string
+- `TELEGRAM_BOT_TOKEN`: Telegram bot token (required for bot functionality)
 - `SESSION_SECRET`: Session encryption key (at least 32 characters for userbot feature)
+- `PORT`: Port number (defaults to 5000, automatically set by Render)
+
+### Render Deployment
+This project is Render-friendly:
+1. Uses `PORT` environment variable for dynamic port binding
+2. MongoDB Atlas for external database (works with any hosting)
+3. Production build: `npm run build` then `npm start`
+4. Environment variables needed: `MONGODB_URI`, `TELEGRAM_BOT_TOKEN`, `SESSION_SECRET`
+
+### Admin Session via Telegram Bot
+Only admins can add Telegram userbot sessions via the `/addsession` command:
+1. Admin sends `/addsession` to the bot
+2. Bot asks for API ID (from my.telegram.org)
+3. Bot asks for API Hash
+4. Bot asks for phone number
+5. Bot sends OTP and asks for the code
+6. If 2FA enabled, asks for password
+7. Session is saved encrypted in MongoDB
 
 ### Replit-Specific Integrations
 - `@replit/vite-plugin-runtime-error-modal`: Development error overlay

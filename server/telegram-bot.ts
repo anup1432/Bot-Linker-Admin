@@ -21,8 +21,23 @@ export function initTelegramBot(token: string): TelegramBot | null {
     return null;
   }
 
+  if (bot) {
+    try {
+      bot.stopPolling();
+    } catch (e) {}
+    bot = null;
+  }
+
   try {
-    bot = new TelegramBot(token, { polling: true });
+    bot = new TelegramBot(token, { 
+      polling: {
+        interval: 300,
+        autoStart: true,
+        params: {
+          timeout: 10
+        }
+      }
+    });
 
     bot.getMe().then((info) => {
       botInfo = {

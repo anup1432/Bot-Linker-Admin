@@ -4,6 +4,7 @@ import session from "express-session";
 import MemoryStore from "memorystore";
 import { storage } from "./mongo-storage";
 import { initTelegramBot, getBotInfo, sendMessageToUser } from "./telegram-bot";
+import { connectMongoDB } from "./mongodb";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -42,7 +43,7 @@ function generateOtp(): string {
 
 declare module "express-session" {
   interface SessionData {
-    oderId?: string;
+    userId?: string;
   }
 }
 
@@ -95,6 +96,13 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  try {
+    await connectMongoDB();
+    console.log("MongoDB connected successfully");
+  } catch (error) {
+    console.error("Failed to connect to MongoDB:", error);
+  }
+
   app.use(
     session({
       store: new MemStore({
@@ -676,9 +684,7 @@ export async function registerRoutes(
       const { status } = req.body;
       const id = req.params.id;
       
-      const withdrawal = await storage.getWithdrawal ? 
-        await storage.getWithdrawal(id) : 
-        (await storage.getAllWithdrawals()).find(w => w.id === id);
+      const withdrawal = await storage.getWithdrawal(id);
       
       if (!withdrawal) {
         return res.status(404).json({ error: "Withdrawal not found" });

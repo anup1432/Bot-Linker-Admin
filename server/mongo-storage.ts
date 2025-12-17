@@ -395,6 +395,11 @@ export class MongoStorage {
     return docs.map(toWithdrawalData);
   }
 
+  async getWithdrawal(id: string): Promise<WithdrawalData | undefined> {
+    const doc = await Withdrawal.findById(id);
+    return doc ? toWithdrawalData(doc) : undefined;
+  }
+
   async createWithdrawal(data: Partial<WithdrawalData>): Promise<WithdrawalData> {
     const doc = await Withdrawal.create({
       ...data,
