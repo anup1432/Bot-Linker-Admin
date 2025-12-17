@@ -30,9 +30,9 @@ The frontend follows a page-based architecture with shared components. Key pages
 The server handles authentication verification using Telegram's HMAC-based login validation, manages user sessions, and provides CRUD operations for group joins and bot settings.
 
 ### Data Storage
-- **Database**: PostgreSQL with Drizzle ORM
-- **Schema Location**: `shared/schema.ts` (shared between frontend and backend)
-- **Migrations**: Drizzle Kit with push-based migrations (`npm run db:push`)
+- **Database**: MongoDB with Mongoose ODM
+- **Schema Location**: `server/mongodb.ts` (models) and `shared/schema.ts` (types)
+- **Connection**: Set `MONGODB_URI` environment variable (e.g., MongoDB Atlas connection string)
 
 Core tables:
 - `users`: Telegram-authenticated users
@@ -94,18 +94,19 @@ Note: Twilio credentials and password hash are NEVER returned to the frontend fo
 
 ### Third-Party Services
 - **Telegram Bot API**: Core integration for bot functionality and user authentication
-- **PostgreSQL Database**: Primary data store (requires `DATABASE_URL` environment variable)
+- **MongoDB Database**: Primary data store (requires `MONGODB_URI` environment variable)
 
 ### Key NPM Packages
 - `node-telegram-bot-api`: Telegram bot SDK for message handling
-- `drizzle-orm` + `drizzle-kit`: Type-safe ORM and migration tooling
-- `express-session` + `connect-pg-simple`: Session management with PostgreSQL backing
+- `mongoose`: MongoDB ODM for data modeling
+- `express-session`: Session management
 - `@tanstack/react-query`: Server state synchronization
 - `zod` + `drizzle-zod`: Runtime validation with schema generation
 
 ### Environment Variables Required
-- `DATABASE_URL`: PostgreSQL connection string
-- Telegram bot token (accessed via bot settings or environment)
+- `MONGODB_URI`: MongoDB connection string (e.g., from MongoDB Atlas)
+- `TELEGRAM_BOT_TOKEN`: Telegram bot token (optional, for bot functionality)
+- `SESSION_SECRET`: Session encryption key (at least 32 characters for userbot feature)
 
 ### Replit-Specific Integrations
 - `@replit/vite-plugin-runtime-error-modal`: Development error overlay
