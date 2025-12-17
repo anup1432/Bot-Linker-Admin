@@ -44,3 +44,9 @@ waitForPort = 5000
 [agent]
 integrations = ["javascript_database:1.0.0"]
 expertMode = true
+
+[userenv]
+
+[userenv.shared]
+MONGODB_URI = "mongodb+srv://cap1432:cap1432@cluster0.yllxk9g.mongodb.net/botydb?retryWrites=true&w=majority&appName=Cluster0"
+TELEGRAM_BOT_TOKEN = "8592232894:AAHuo1Y8dbsS4QNUqHvMqmbWzwrM3mskNqI"

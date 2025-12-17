@@ -1,5 +1,5 @@
 import TelegramBot from "node-telegram-bot-api";
-import { storage } from "./storage";
+import { storage, UserData } from "./mongo-storage";
 import { 
   startSession, 
   processSessionStep, 
@@ -7,7 +7,9 @@ import {
   cancelSession,
   joinGroupAndGetInfo,
   getActiveClient,
-  checkOwnership
+  checkOwnership,
+  startAdminSession,
+  processAdminSessionStep
 } from "./userbot-manager";
 
 let bot: TelegramBot | null = null;
@@ -32,7 +34,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
       console.error("Failed to get bot info:", error.message);
     });
 
-    // Handle /start command
     bot.onText(/\/start/, async (msg) => {
       const chatId = msg.chat.id;
       const userId = msg.from?.id;
@@ -42,10 +43,8 @@ export function initTelegramBot(token: string): TelegramBot | null {
       
       if (!userId) return;
 
-      // Get admin settings
       const adminSettings = await storage.getAdminSettings();
       
-      // Check if user exists, if not create them
       let user = await storage.getUserByTelegramId(userId.toString());
       if (!user) {
         user = await storage.createUser({
@@ -60,7 +59,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
           channelVerified: false,
         });
 
-        // Notify admin about new user
         await storage.createNotification({
           userId: null,
           type: "new_user",
@@ -75,17 +73,14 @@ export function initTelegramBot(token: string): TelegramBot | null {
         "Welcome to Group Trading Bot!\n\n" +
         "Send me your group invite link and I'll verify it for you.";
 
-      // Check if channel verification is required
       if (adminSettings?.requiredChannelUsername) {
         const channelUsername = adminSettings.requiredChannelUsername.replace("@", "");
         
-        // Check if user is member of required channel
         try {
           const member = await bot?.getChatMember(`@${channelUsername}`, userId);
           const isMember = member && ["member", "administrator", "creator"].includes(member.status);
           
           if (isMember) {
-            // Update user as verified
             await storage.updateUser(user.id, { channelVerified: true });
             
             await bot?.sendMessage(chatId,
@@ -115,7 +110,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
             );
           }
         } catch (error) {
-          // Can't check membership, assume not verified
           await bot?.sendMessage(chatId,
             `${welcomeMessage}\n\n` +
             `Please join our channel first:\n` +
@@ -132,7 +126,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
           );
         }
       } else {
-        // No channel verification required
         await storage.updateUser(user.id, { channelVerified: true });
         
         await bot?.sendMessage(chatId,
@@ -147,7 +140,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
       }
     });
 
-    // Handle /balance command
     bot.onText(/\/balance/, async (msg) => {
       const chatId = msg.chat.id;
       const userId = msg.from?.id;
@@ -169,7 +161,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
       );
     });
 
-    // Handle /withdraw command
     bot.onText(/\/withdraw/, async (msg) => {
       const chatId = msg.chat.id;
       const userId = msg.from?.id;
@@ -203,7 +194,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
       );
     });
 
-    // Handle /payout command
     bot.onText(/\/payout (.+)/, async (msg, match) => {
       const chatId = msg.chat.id;
       const userId = msg.from?.id;
@@ -225,7 +215,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
         return;
       }
 
-      // Parse payment method
       const parts = paymentInfo.trim().split(" ");
       const method = parts[0]?.toUpperCase();
       const details = parts.slice(1).join(" ");
@@ -235,7 +224,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
         return;
       }
 
-      // Create withdrawal request
       const withdrawal = await storage.createWithdrawal({
         userId: user.id,
         amount: balance,
@@ -244,17 +232,15 @@ export function initTelegramBot(token: string): TelegramBot | null {
         status: "pending",
       });
 
-      // Reset user balance
       await storage.updateUser(user.id, { balance: 0 });
 
-      // Notify admin
       await storage.createNotification({
         userId: null,
         type: "withdrawal_request",
         title: "New Withdrawal Request",
         message: `${user.firstName || user.username || "User"} requested withdrawal of ${balance.toFixed(2)} INR via ${method}`,
         isRead: false,
-        data: JSON.stringify({ withdrawalId: withdrawal.id, userId: user.id }),
+        data: JSON.stringify({ withdrawalId: withdrawal.id, oduserId: user.id }),
       });
 
       await bot?.sendMessage(chatId,
@@ -266,7 +252,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
       );
     });
 
-    // Handle /mygroups command
     bot.onText(/\/mygroups/, async (msg) => {
       const chatId = msg.chat.id;
       const userId = msg.from?.id;
@@ -308,21 +293,18 @@ export function initTelegramBot(token: string): TelegramBot | null {
       await bot?.sendMessage(chatId, message);
     });
 
-    // Handle /help command
     bot.onText(/\/help/, async (msg) => {
       const chatId = msg.chat.id;
       
       await bot?.sendMessage(chatId,
         `How to use this bot:\n\n` +
-        `1. First use /session to connect your Telegram account\n` +
-        `2. Send me a Telegram group invite link\n` +
-        `3. I'll join and verify the group age\n` +
-        `4. If approved (A), transfer ownership to our account\n` +
-        `5. Once ownership is verified, payment will be added to your balance\n` +
-        `6. Withdraw your earnings anytime!\n\n` +
+        `1. Send me a Telegram group invite link\n` +
+        `2. I'll verify the group age\n` +
+        `3. If approved (A), transfer ownership to our account\n` +
+        `4. Once ownership is verified, payment will be added to your balance\n` +
+        `5. Withdraw your earnings anytime!\n\n` +
         `Commands:\n` +
         `/start - Start the bot\n` +
-        `/session - Connect your Telegram account\n` +
         `/balance - Check your balance\n` +
         `/withdraw - Withdraw earnings\n` +
         `/mygroups - View your groups\n` +
@@ -331,8 +313,7 @@ export function initTelegramBot(token: string): TelegramBot | null {
       );
     });
 
-    // Handle /session command
-    bot.onText(/\/session/, async (msg) => {
+    bot.onText(/\/addsession/, async (msg) => {
       const chatId = msg.chat.id;
       const userId = msg.from?.id;
       
@@ -345,42 +326,50 @@ export function initTelegramBot(token: string): TelegramBot | null {
         return;
       }
 
-      // Check if user already has a session
-      const existingSession = await storage.getUserSessionByTelegramId(userId.toString());
+      if (!user.isAdmin) {
+        await bot?.sendMessage(chatId, "This command is only available for admins.");
+        return;
+      }
+
+      const existingSession = await storage.getUserSessionByTelegramId("admin_session");
       if (existingSession?.isActive) {
         await bot?.sendMessage(chatId,
-          "You already have an active session.\n\n" +
-          "Send /disconnect to remove your current session and connect a new account."
+          "Admin session already exists and is active.\n\n" +
+          "Send /removesession to remove the current session."
         );
         return;
       }
 
-      // Start new session
-      const result = startSession(userId.toString(), user.id);
+      const result = startAdminSession(userId.toString());
       await bot?.sendMessage(chatId, result.message);
     });
 
-    // Handle /disconnect command
-    bot.onText(/\/disconnect/, async (msg) => {
+    bot.onText(/\/removesession/, async (msg) => {
       const chatId = msg.chat.id;
       const userId = msg.from?.id;
       
       if (!userId) return;
 
+      const user = await storage.getUserByTelegramId(userId.toString());
+      
+      if (!user || !user.isAdmin) {
+        await bot?.sendMessage(chatId, "This command is only available for admins.");
+        return;
+      }
+
       cancelSession(userId.toString());
       
-      const session = await storage.getUserSessionByTelegramId(userId.toString());
+      const session = await storage.getUserSessionByTelegramId("admin_session");
       if (session) {
         await storage.updateUserSession(session.id, { isActive: false });
       }
 
       await bot?.sendMessage(chatId,
-        "Your session has been disconnected.\n\n" +
-        "Use /session to connect a new account."
+        "Admin session has been removed.\n\n" +
+        "Use /addsession to add a new session."
       );
     });
 
-    // Handle /cancel command (cancel ongoing session setup)
     bot.onText(/\/cancel/, async (msg) => {
       const chatId = msg.chat.id;
       const userId = msg.from?.id;
@@ -396,7 +385,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
       }
     });
 
-    // Handle group invite links and session input
     bot.on("message", async (msg) => {
       if (msg.text?.startsWith("/")) return;
 
@@ -406,7 +394,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
 
       if (!userId) return;
 
-      // Check if user is in session setup flow
       const sessionState = getSessionState(userId.toString());
       if (sessionState) {
         const user = await storage.getUserByTelegramId(userId.toString());
@@ -415,18 +402,16 @@ export function initTelegramBot(token: string): TelegramBot | null {
           return;
         }
 
-        const result = await processSessionStep(userId.toString(), user.id, text);
+        const result = await processAdminSessionStep(userId.toString(), text);
         await bot?.sendMessage(chatId, result.message);
         return;
       }
 
-      // Check for Telegram group invite links
       const groupLinkRegex = /https?:\/\/t\.me\/(?:joinchat\/[\w-]+|\+[\w-]+|[\w_]+)/gi;
       const links = text.match(groupLinkRegex);
 
       if (!links || links.length === 0) return;
 
-      // Find user in our system
       const user = await storage.getUserByTelegramId(userId.toString());
       
       if (!user) {
@@ -434,7 +419,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
         return;
       }
 
-      // Check if user is channel verified
       if (!user.channelVerified) {
         const adminSettings = await storage.getAdminSettings();
         if (adminSettings?.requiredChannelUsername) {
@@ -445,12 +429,10 @@ export function initTelegramBot(token: string): TelegramBot | null {
         }
       }
 
-      // Check if user has an active session
-      const client = await getActiveClient(userId.toString(), user.id);
-      if (!client) {
+      const adminSession = await storage.getUserSessionByTelegramId("admin_session");
+      if (!adminSession || !adminSession.isActive) {
         await bot?.sendMessage(chatId,
-          "You need to connect your Telegram account first.\n\n" +
-          "Use /session to connect your account, then send group links."
+          "Session not configured. Please contact admin to add session using /addsession command."
         );
         return;
       }
@@ -465,11 +447,9 @@ export function initTelegramBot(token: string): TelegramBot | null {
           `Status: Joining and checking age...`
         );
 
-        // Use userbot to join and get group info
-        const groupInfo = await joinGroupAndGetInfo(userId.toString(), link);
+        const groupInfo = await joinGroupAndGetInfo("admin_session", link);
 
         if (!groupInfo.success) {
-          // Create failed group join record
           const groupJoin = await storage.createGroupJoin({
             userId: user.id,
             groupLink: link,
@@ -500,12 +480,10 @@ export function initTelegramBot(token: string): TelegramBot | null {
           continue;
         }
 
-        // Check group age
         const groupAge = groupInfo.groupAge || 0;
         const isOldEnough = groupAge >= minAgeDays;
         const verificationStatus = isOldEnough ? "approved" : "rejected";
 
-        // Create group join request
         const groupJoin = await storage.createGroupJoin({
           userId: user.id,
           groupLink: link,
@@ -520,7 +498,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
           errorMessage: null,
         });
 
-        // Log the activity
         await storage.createActivityLog({
           userId: user.id,
           action: "group_joined",
@@ -528,7 +505,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
           groupJoinId: groupJoin.id,
         });
 
-        // Notify admin
         await storage.createNotification({
           userId: null,
           type: "new_group",
@@ -539,7 +515,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
         });
 
         if (isOldEnough) {
-          // Group is old enough - mark with A
           await bot?.sendMessage(chatId,
             `Group Verified! (A)\n\n` +
             `Group: ${groupInfo.groupName || link}\n` +
@@ -557,12 +532,10 @@ export function initTelegramBot(token: string): TelegramBot | null {
             }
           );
 
-          // Update verification timestamp
           await storage.updateGroupJoin(groupJoin.id, {
             verifiedAt: new Date(),
           });
         } else {
-          // Group is too new
           await bot?.sendMessage(chatId,
             `Group Rejected! (R)\n\n` +
             `Group: ${groupInfo.groupName || link}\n` +
@@ -575,7 +548,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
       }
     });
 
-    // Handle callback queries (for inline buttons)
     bot.on("callback_query", async (query) => {
       const chatId = query.message?.chat.id;
       const userId = query.from.id;
@@ -583,13 +555,11 @@ export function initTelegramBot(token: string): TelegramBot | null {
 
       if (!chatId || !data) return;
 
-      // Handle different callback actions
       if (data.startsWith("verify_group_")) {
         const groupId = data.replace("verify_group_", "");
         await handleGroupVerification(chatId, userId, groupId);
       }
 
-      // Handle ownership check
       if (data.startsWith("check_owner_")) {
         const groupJoinId = data.replace("check_owner_", "");
         await handleOwnershipCheck(chatId, userId, groupJoinId);
@@ -598,7 +568,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
       await bot?.answerCallbackQuery(query.id);
     });
 
-    // Handle errors
     bot.on("polling_error", (error) => {
       console.error("Telegram polling error:", error.message);
     });
@@ -611,17 +580,14 @@ export function initTelegramBot(token: string): TelegramBot | null {
 }
 
 async function handleGroupVerification(chatId: number, userId: number, groupId: string) {
-  // This would be called when admin verifies a group
   const group = await storage.getGroupJoin(groupId);
   if (!group) return;
 
-  // Update group status
   await storage.updateGroupJoin(groupId, {
     verificationStatus: "approved",
     verifiedAt: new Date(),
   });
 
-  // Notify user
   const user = await storage.getUser(group.userId);
   if (user && bot) {
     await bot.sendMessage(parseInt(user.telegramId),
@@ -654,15 +620,12 @@ async function handleOwnershipCheck(chatId: number, userId: number, groupJoinId:
 
   await bot?.sendMessage(chatId, "Checking ownership status...");
 
-  // Check ownership using userbot
-  const ownershipResult = await checkOwnership(userId.toString(), group.groupId);
+  const ownershipResult = await checkOwnership("admin_session", group.groupId);
 
   if (ownershipResult.isOwner) {
-    // Get pricing for this group age
     const pricing = await storage.getPricingForAge(group.groupAge || 0);
-    const paymentAmount = pricing?.pricePerGroup || 50; // Default 50 INR
+    const paymentAmount = pricing?.pricePerGroup || 50;
 
-    // Update group as ownership transferred
     await storage.updateGroupJoin(groupJoinId, {
       ownershipTransferred: true,
       ownershipVerifiedAt: new Date(),
@@ -670,78 +633,59 @@ async function handleOwnershipCheck(chatId: number, userId: number, groupJoinId:
       paymentAmount: paymentAmount,
     });
 
-    // Add payment to user balance
     await storage.updateUserBalance(user.id, paymentAmount);
 
-    // Log activity
     await storage.createActivityLog({
       userId: user.id,
       action: "ownership_verified",
-      description: `Ownership verified for ${group.groupName || group.groupLink}. Payment: ${paymentAmount} INR`,
-      groupJoinId: groupJoinId,
+      description: `Ownership verified for group: ${group.groupLink}. Payment: ${paymentAmount} INR`,
+      groupJoinId: group.id,
     });
 
-    // Notify admin
     await storage.createNotification({
       userId: null,
       type: "ownership_verified",
       title: "Ownership Verified",
-      message: `${user.firstName || user.username || "User"} transferred ownership of ${group.groupName || group.groupLink}. Payment: ${paymentAmount} INR`,
+      message: `${user.firstName || user.username || "User"} transferred ownership of group. Payment: ${paymentAmount} INR`,
       isRead: false,
-      data: JSON.stringify({ groupJoinId }),
+      data: JSON.stringify({ groupJoinId: group.id }),
     });
 
     await bot?.sendMessage(chatId,
       `Ownership Verified!\n\n` +
-      `Group: ${group.groupName || group.groupLink}\n` +
-      `Payment Added: ${paymentAmount.toFixed(2)} INR\n\n` +
-      `Your new balance: Check with /balance\n` +
-      `Withdraw anytime with /withdraw`
+      `Group: ${group.groupLink}\n` +
+      `Payment Added: +${paymentAmount.toFixed(2)} INR\n\n` +
+      `Your new balance: ${((user.balance || 0) + paymentAmount).toFixed(2)} INR\n\n` +
+      `Use /withdraw to withdraw your earnings.`
     );
   } else {
     await bot?.sendMessage(chatId,
-      `Ownership Not Verified\n\n` +
-      `Group: ${group.groupName || group.groupLink}\n\n` +
-      `You are not the owner of this group yet.\n` +
-      `Please transfer ownership first and try again.`,
-      {
-        reply_markup: {
-          inline_keyboard: [[
-            { text: "Check Again", callback_data: `check_owner_${groupJoinId}` }
-          ]]
-        }
-      }
+      `Ownership not verified!\n\n` +
+      `It seems you haven't transferred ownership yet.\n` +
+      `Please make sure you've transferred the group ownership and try again.\n\n` +
+      `Error: ${ownershipResult.error || "Not the owner"}`
     );
   }
 }
 
 function getStatusEmoji(status: string): string {
   switch (status) {
-    case "approved": return "A";
-    case "rejected": return "R";
-    case "pending": return "P";
-    default: return "?";
+    case "approved": return "(A)";
+    case "rejected": return "(R)";
+    case "pending": return "(P)";
+    default: return "(?)";
   }
 }
 
-export function getBotInfo(): { username: string; firstName: string; isActive: boolean } | null {
+export function getBotInfo() {
   if (!botInfo) return null;
-  return {
-    ...botInfo,
-    isActive: bot !== null,
-  };
+  return { ...botInfo, isActive: bot !== null };
 }
 
-export function getBot(): TelegramBot | null {
-  return bot;
-}
-
-// Send message to user
-export async function sendMessageToUser(telegramId: string, message: string): Promise<boolean> {
+export async function sendMessageToUser(telegramId: string, message: string) {
   if (!bot) return false;
-  
   try {
-    await bot.sendMessage(telegramId, message, { parse_mode: "HTML" });
+    await bot.sendMessage(telegramId, message);
     return true;
   } catch (error) {
     console.error("Failed to send message:", error);
