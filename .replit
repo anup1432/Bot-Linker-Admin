@@ -50,3 +50,4 @@ expertMode = true
 [userenv.shared]
 MONGODB_URI = "mongodb+srv://cap1432:cap1432@cluster0.yllxk9g.mongodb.net/botydb?retryWrites=true&w=majority&appName=Cluster0"
 TELEGRAM_BOT_TOKEN = "8592232894:AAHuo1Y8dbsS4QNUqHvMqmbWzwrM3mskNqI"
+ADMIN_USER_ID = "1804574038"
