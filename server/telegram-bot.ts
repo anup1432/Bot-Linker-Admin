@@ -562,29 +562,52 @@ export function initTelegramBot(token: string): TelegramBot | null {
           let currentPrice = 0;
           
           try {
-            const allPricings = await storage.getPricingSettings();
-            console.log(`[PRICING] All pricing settings:`, JSON.stringify(allPricings));
+            // Use year-based pricing - check for specific month first (for 2024), then year range
+            let yearPricing = null;
+            const otherType = groupType === "used" ? "unused" : "used";
+            let otherTypePricing = null;
             
-            const typedPricing = allPricings.find(p => p.groupType === groupType && p.isActive);
-            const otherTypePricing = allPricings.find(p => p.groupType !== groupType && p.isActive);
+            if (year) {
+              // For 2024+, try monthly pricing first if month is available
+              if (year >= 2024 && month) {
+                yearPricing = await storage.getYearPricing(year, month, groupType);
+                otherTypePricing = await storage.getYearPricing(year, month, otherType);
+                
+                // If monthly pricing not found or inactive, fall back to yearly
+                if (!yearPricing || !yearPricing.isActive) {
+                  yearPricing = await storage.getYearPricing(year, null, groupType);
+                }
+                if (!otherTypePricing || !otherTypePricing.isActive) {
+                  otherTypePricing = await storage.getYearPricing(year, null, otherType);
+                }
+              } else {
+                // For years before 2024 or when month not available, use year-only pricing
+                // This will match year ranges like 2016-2022
+                yearPricing = await storage.getYearPricing(year, null, groupType);
+                otherTypePricing = await storage.getYearPricing(year, null, otherType);
+              }
+            }
             
-            console.log(`[PRICING] Group type: ${groupType}, Typed pricing:`, typedPricing);
-            console.log(`[PRICING] Other type pricing:`, otherTypePricing);
+            console.log(`[PRICING] Year: ${year}, Month: ${month}, Group type: ${groupType}`);
+            console.log(`[PRICING] Year pricing found:`, yearPricing);
+            console.log(`[PRICING] Other type pricing found:`, otherTypePricing);
             
-            if (typedPricing) {
-              priceInfo = `Price: ₹${typedPricing.pricePerGroup}`;
-              currentPrice = typedPricing.pricePerGroup;
+            if (yearPricing && yearPricing.isActive) {
+              priceInfo = `Price: ₹${yearPricing.pricePerGroup}`;
+              currentPrice = yearPricing.pricePerGroup;
               
-              if (groupType === "used" && otherTypePricing) {
-                console.log(`[PRICING] Comparing: Used ₹${typedPricing.pricePerGroup} vs Unused ₹${otherTypePricing.pricePerGroup}`);
-                if (typedPricing.pricePerGroup < otherTypePricing.pricePerGroup) {
-                  priceComparisonMsg = `Group is used - Price is low. If you want to sell, here's your price: ₹${typedPricing.pricePerGroup}`;
+              if (groupType === "used" && otherTypePricing && otherTypePricing.isActive) {
+                console.log(`[PRICING] Comparing: Used ₹${yearPricing.pricePerGroup} vs Unused ₹${otherTypePricing.pricePerGroup}`);
+                if (yearPricing.pricePerGroup < otherTypePricing.pricePerGroup) {
+                  priceComparisonMsg = `Group is used - Price is low. If you want to sell, here's your price: ₹${yearPricing.pricePerGroup}`;
                   console.log(`[PRICING] Used price is lower - showing comparison message`);
                 }
               }
+            } else {
+              priceInfo = "Price: Not configured for this year";
             }
           } catch (e) {
-            console.log("Could not fetch pricing:", e);
+            console.log("Could not fetch year pricing:", e);
           }
           
           let messageText = `Group Verified! (A)\n\n` +
@@ -703,8 +726,39 @@ async function handleOwnershipCheck(chatId: number, userId: number, groupJoinId:
   const ownershipResult = await checkOwnership("admin_session", group.groupId);
 
   if (ownershipResult.isOwner) {
-    const pricing = await storage.getPricingForAge(group.groupAge || 0);
-    const paymentAmount = pricing?.pricePerGroup || 50;
+    // Use year-based pricing for payment
+    let paymentAmount = 50; // default
+    const groupYear = group.groupYear;
+    const groupMonth = group.groupMonth;
+    const groupType = group.groupType || "unused";
+    
+    try {
+      let yearPricing = null;
+      
+      if (groupYear) {
+        // For 2024+, try monthly pricing first if month is available
+        if (groupYear >= 2024 && groupMonth) {
+          yearPricing = await storage.getYearPricing(groupYear, groupMonth, groupType);
+          
+          // If monthly pricing not found or inactive, fall back to yearly
+          if (!yearPricing || !yearPricing.isActive) {
+            yearPricing = await storage.getYearPricing(groupYear, null, groupType);
+          }
+        } else {
+          // For years before 2024 or when month not available, use year-only pricing
+          // This will match year ranges like 2016-2022
+          yearPricing = await storage.getYearPricing(groupYear, null, groupType);
+        }
+      }
+      
+      if (yearPricing && yearPricing.isActive) {
+        paymentAmount = yearPricing.pricePerGroup;
+      }
+      
+      console.log(`[OWNERSHIP] Year: ${groupYear}, Month: ${groupMonth}, Type: ${groupType}, Price: ${paymentAmount}`);
+    } catch (e) {
+      console.log("Could not fetch year pricing for ownership:", e);
+    }
 
     await storage.updateGroupJoin(groupJoinId, {
       ownershipTransferred: true,
