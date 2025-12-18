@@ -420,6 +420,7 @@ export function initTelegramBot(token: string): TelegramBot | null {
       const chatId = msg.chat.id;
       const userId = msg.from?.id;
       const text = msg.text || "";
+      const messageId = msg.message_id;
 
       if (!userId) return;
 

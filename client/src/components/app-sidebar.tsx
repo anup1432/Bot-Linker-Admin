@@ -71,6 +71,12 @@ interface AppSidebarProps {
 export function AppSidebar({ user, onLogout }: AppSidebarProps) {
   const [location] = useLocation();
 
+  const normalizeLocation = (loc: string) => {
+    return loc.endsWith('/') && loc !== '/' ? loc.slice(0, -1) : loc;
+  };
+
+  const normalizedLocation = normalizeLocation(location);
+
   return (
     <Sidebar>
       <SidebarHeader className="p-4">
@@ -93,7 +99,7 @@ export function AppSidebar({ user, onLogout }: AppSidebarProps) {
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton 
                     asChild 
-                    isActive={location === item.url}
+                    isActive={normalizedLocation === item.url || (item.url === '/' && normalizedLocation === '')}
                     data-testid={`link-${item.title.toLowerCase().replace(' ', '-')}`}
                   >
                     <Link href={item.url}>
@@ -116,7 +122,7 @@ export function AppSidebar({ user, onLogout }: AppSidebarProps) {
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton 
                       asChild 
-                      isActive={location === item.url}
+                      isActive={normalizedLocation === item.url}
                       data-testid={`link-admin-${item.title.toLowerCase().replace(' ', '-')}`}
                     >
                       <Link href={item.url}>

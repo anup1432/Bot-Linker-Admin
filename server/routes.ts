@@ -104,9 +104,11 @@ export async function registerRoutes(
   }
 
   // Trust proxy for Render/production environments
-  if (process.env.NODE_ENV === "production") {
-    app.set("trust proxy", 1);
-  }
+  app.set("trust proxy", process.env.NODE_ENV === "production" ? 1 : 0);
+  
+  // Ensure app runs on all interfaces (required for Render/VPS)
+  const PORT = parseInt(process.env.PORT || "5000", 10);
+  const HOST = process.env.HOST || "0.0.0.0";
 
   app.use(
     session({
