@@ -79,9 +79,9 @@ export function extractGroupYearAndMonth(date: Date | null): { year: number | nu
   return { year: date.getFullYear(), month: date.getMonth() + 1 };
 }
 
-export function classifyGroupType(messageCount: number | null): string {
-  if (!messageCount) return "unknown";
-  return messageCount < 100 ? "unused" : "used";
+export function classifyGroupType(deletedMessages: number | null): string {
+  if (deletedMessages === null || deletedMessages === undefined) return "unknown";
+  return deletedMessages >= 100 ? "used" : "unused";
 }
 
 function encrypt(text: string): string {
@@ -713,14 +713,31 @@ export async function joinGroupAndGetInfo(
       }
     }
     
-    let messageCount = 0;
+    let lastMessageId = 0;
+    let totalMessages = 0;
+    let deletedMessages = 0;
+    
     try {
       const messages = await client.getMessages(chat, { limit: 1 });
       if (messages && messages.length > 0) {
-        messageCount = (messages[0] as any).id || 0;
+        lastMessageId = (messages[0] as any).id || 0;
       }
+      
+      const groupInfo = await client.invoke(
+        new Api.channels.GetFullChannel({
+          channel: groupId || chat
+        })
+      );
+      
+      const fullChat = groupInfo.chats?.[0];
+      if (fullChat instanceof Api.Channel) {
+        totalMessages = (fullChat as any).topicCount || lastMessageId || 0;
+      }
+      
+      deletedMessages = Math.max(0, totalMessages - lastMessageId);
     } catch (e) {
-      console.log("Could not get message count for group");
+      console.log("Could not get message count for group, using last message ID as estimate");
+      totalMessages = lastMessageId;
     }
     
     return {
@@ -729,7 +746,7 @@ export async function joinGroupAndGetInfo(
       groupName,
       groupAge,
       memberCount,
-      messageCount,
+      messageCount: deletedMessages,
     };
   } catch (error: any) {
     console.error("Error joining group:", error);
