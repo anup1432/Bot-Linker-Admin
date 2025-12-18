@@ -558,10 +558,22 @@ export function initTelegramBot(token: string): TelegramBot | null {
           const typeLabel = groupType === "used" ? "Used Group" : "Unused Group";
           const yearMonthInfo = year && month ? `${year}/${month}` : (year ? `${year}` : "Unknown");
           
+          let priceInfo = "Price: Not configured";
+          try {
+            const allPricings = await storage.getPricingSettings();
+            const typedPricing = allPricings.find(p => p.groupType === groupType && p.isActive);
+            if (typedPricing) {
+              priceInfo = `Price: ₹${typedPricing.pricePerGroup}`;
+            }
+          } catch (e) {
+            console.log("Could not fetch pricing:", e);
+          }
+          
           await bot?.sendMessage(chatId,
             `Group Verified! (A)\n\n` +
             `Group: ${groupInfo.groupName || link}\n` +
             `Type: ${typeIcon} ${typeLabel}\n` +
+            `${priceInfo}\n` +
             `Age: ${yearMonthInfo}\n` +
             `Members: ${groupInfo.memberCount || "Unknown"}\n\n` +
             `This group is approved!\n\n` +
@@ -580,25 +592,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
             verifiedAt: new Date(),
             paymentAmount: null,
           });
-        } else {
-          const typeIcon = groupType === "used" ? "✓" : "⊘";
-          const typeLabel = groupType === "used" ? "Used Group" : "Unused Group";
-          const yearMonthInfo = year && month ? `${year}/${month}` : (year ? `${year}` : "Unknown");
-          let rejectionReason = "";
-          
-          if (!isOldEnough) {
-            rejectionReason = `Group is too new.\nMinimum required age: ${minAgeDays} days`;
-          } else if (!hasAcceptableDeletions) {
-            rejectionReason = `Too many deleted messages (${deletedMessages}).\nMax allowed: 100`;
-          }
-          
-          await bot?.sendMessage(chatId,
-            `!\n\n` +
-            `Group: ${groupInfo.groupName || link}\n` +
-            `Type: ${typeIcon} ${typeLabel}\n` +
-            `Age: ${yearMonthInfo}\n\n` +
-            `${rejectionReason}`
-          );
         }
       }
     });
