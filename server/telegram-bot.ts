@@ -557,12 +557,23 @@ export function initTelegramBot(token: string): TelegramBot | null {
           const typeLabel = groupType === "used" ? "Used" : "Unused";
           const yearMonthInfo = year ? `${year}${month ? `/${month}` : ""}` : "Unknown";
           
+          let pricingInfo = "Price: Not configured";
+          try {
+            const allPricings = await storage.getPricingSettings();
+            const typedPricings = allPricings.filter(p => p.groupType === groupType && p.isActive);
+            if (typedPricings.length > 0) {
+              pricingInfo = `Price: ₹${typedPricings[0].pricePerGroup}`;
+            }
+          } catch (e) {
+            console.log("Could not fetch pricing");
+          }
+          
           await bot?.sendMessage(chatId,
             `A\n\n` +
             `Group: ${groupInfo.groupName || link}\n` +
             `Type: ${typeLabel}\n` +
-            `Deleted Messages: ${deletedMessages}\n` +
-            `Age: ${groupAge} days old (${yearMonthInfo})\n` +
+            `${pricingInfo}\n` +
+            `Date: ${yearMonthInfo}\n` +
             `Members: ${groupInfo.memberCount || "Unknown"}\n\n` +
             `Next step: Transfer ownership of this group to our account.\n` +
             `Once you transfer ownership, send /checkowner to verify and receive payment.`,
@@ -577,6 +588,7 @@ export function initTelegramBot(token: string): TelegramBot | null {
 
           await storage.updateGroupJoin(groupJoin.id, {
             verifiedAt: new Date(),
+            paymentAmount: null,
           });
         } else {
           const typeLabel = groupType === "used" ? "Used" : "Unused";
@@ -593,8 +605,7 @@ export function initTelegramBot(token: string): TelegramBot | null {
             `!\n\n` +
             `Group: ${groupInfo.groupName || link}\n` +
             `Type: ${typeLabel}\n` +
-            `Deleted Messages: ${deletedMessages}\n` +
-            `Age: ${groupAge} days old (${yearMonthInfo})\n\n` +
+            `Date: ${yearMonthInfo}\n\n` +
             `${rejectionReason}`
           );
         }
