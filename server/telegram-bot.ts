@@ -26,8 +26,15 @@ export function initTelegramBot(token: string): TelegramBot | null {
   if (bot) {
     try {
       bot.stopPolling();
-    } catch (e) {}
+      bot.removeAllListeners();
+    } catch (e) {
+      console.log("Error stopping existing bot polling:", e);
+    }
     bot = null;
+  }
+  
+  if (process.env.NODE_ENV === 'production') {
+    console.log("Using webhook mode for Telegram bot in production");
   }
 
   try {
