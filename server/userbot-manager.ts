@@ -714,7 +714,7 @@ export async function joinGroupAndGetInfo(
     }
     
     let lastMessageId = 0;
-    let totalMessages = 0;
+    let existingMessages = 0;
     let deletedMessages = 0;
     
     try {
@@ -723,21 +723,22 @@ export async function joinGroupAndGetInfo(
         lastMessageId = (messages[0] as any).id || 0;
       }
       
-      const groupInfo = await client.invoke(
-        new Api.channels.GetFullChannel({
-          channel: groupId || chat
-        })
-      );
-      
-      const fullChat = groupInfo.chats?.[0];
-      if (fullChat instanceof Api.Channel) {
-        totalMessages = (fullChat as any).topicCount || lastMessageId || 0;
+      if (lastMessageId > 0) {
+        try {
+          const history = await client.getMessages(chat, { limit: 100 });
+          existingMessages = history ? history.length : 0;
+          
+          if (existingMessages === 0) {
+            existingMessages = 1;
+          }
+        } catch (e) {
+          existingMessages = 1;
+        }
+        
+        deletedMessages = Math.max(0, lastMessageId - existingMessages);
       }
-      
-      deletedMessages = Math.max(0, totalMessages - lastMessageId);
     } catch (e) {
-      console.log("Could not get message count for group, using last message ID as estimate");
-      totalMessages = lastMessageId;
+      console.log("Could not get message count for group");
     }
     
     return {
