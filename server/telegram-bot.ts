@@ -510,9 +510,11 @@ export function initTelegramBot(token: string): TelegramBot | null {
         }
 
         const groupAge = groupInfo.groupAge || 0;
+        const deletedMessages = groupInfo.messageCount || 0;
         const isOldEnough = groupAge >= minAgeDays;
-        const verificationStatus = isOldEnough ? "approved" : "rejected";
-        const groupType = classifyGroupType(groupInfo.messageCount || null);
+        const hasAcceptableDeletions = deletedMessages < 100;
+        const verificationStatus = (isOldEnough && hasAcceptableDeletions) ? "approved" : "rejected";
+        const groupType = classifyGroupType(deletedMessages);
         const createdDate = new Date();
         createdDate.setDate(createdDate.getDate() - groupAge);
         const { year, month } = extractGroupYearAndMonth(createdDate);
@@ -551,14 +553,14 @@ export function initTelegramBot(token: string): TelegramBot | null {
           data: JSON.stringify({ groupJoinId: groupJoin.id }),
         });
 
-        if (isOldEnough) {
-          const groupTypeLabel = groupType === "used" ? "✓ Used Group (100+ messages)" : "⊘ Unused Group (<100 messages)";
+        if (isOldEnough && hasAcceptableDeletions) {
+          const deletionStatus = deletedMessages < 100 ? "✓ Intact Group" : "⊘ High Deletions";
           const yearMonthInfo = year ? `${year}${month ? `/${month}` : ""}` : "Unknown";
           
           await bot?.sendMessage(chatId,
             `Group Verified! (A)\n\n` +
             `Group: ${groupInfo.groupName || link}\n` +
-            `Type: ${groupTypeLabel}\n` +
+            `Deleted Messages: ${deletedMessages} (${deletionStatus})\n` +
             `Age: ${groupAge} days old (${yearMonthInfo})\n` +
             `Members: ${groupInfo.memberCount || "Unknown"}\n\n` +
             `This group is approved!\n\n` +
@@ -577,17 +579,22 @@ export function initTelegramBot(token: string): TelegramBot | null {
             verifiedAt: new Date(),
           });
         } else {
-          const groupTypeLabel = groupType === "used" ? "✓ Used Group (100+ messages)" : "⊘ Unused Group (<100 messages)";
           const yearMonthInfo = year ? `${year}${month ? `/${month}` : ""}` : "Unknown";
+          let rejectionReason = "";
+          
+          if (!isOldEnough) {
+            rejectionReason = `Sorry, this group is too new.\nMinimum required age: ${minAgeDays} days`;
+          } else if (!hasAcceptableDeletions) {
+            rejectionReason = `Sorry, this group has too many deleted messages (${deletedMessages}).\nMaximum allowed: 100 deleted messages`;
+          }
           
           await bot?.sendMessage(chatId,
             `Group Rejected! (R)\n\n` +
             `Group: ${groupInfo.groupName || link}\n` +
-            `Type: ${groupTypeLabel}\n` +
+            `Deleted Messages: ${deletedMessages}\n` +
             `Age: ${groupAge} days old (${yearMonthInfo})\n\n` +
-            `Sorry, this group is too new.\n` +
-            `Minimum required age: ${minAgeDays} days\n\n` +
-            `Please try with an older group.`
+            `${rejectionReason}\n\n` +
+            `Please try with a different group.`
           );
         }
       }
