@@ -559,26 +559,45 @@ export function initTelegramBot(token: string): TelegramBot | null {
           const yearMonthInfo = year && month ? `${year}/${month}` : (year ? `${year}` : "Unknown");
           
           let priceInfo = "Price: Not configured";
+          let priceComparisonMsg = "";
+          let currentPrice = 0;
+          
           try {
             const allPricings = await storage.getPricingSettings();
             const typedPricing = allPricings.find(p => p.groupType === groupType && p.isActive);
+            const otherTypePricing = allPricings.find(p => p.groupType !== groupType && p.isActive);
+            
             if (typedPricing) {
               priceInfo = `Price: ₹${typedPricing.pricePerGroup}`;
+              currentPrice = typedPricing.pricePerGroup;
+              
+              if (groupType === "used" && otherTypePricing) {
+                if (typedPricing.pricePerGroup < otherTypePricing.pricePerGroup) {
+                  priceComparisonMsg = `Group is used - Price is low. If you want to sell, here's your price: ₹${typedPricing.pricePerGroup}`;
+                }
+              }
             }
           } catch (e) {
             console.log("Could not fetch pricing:", e);
           }
           
-          await bot?.sendMessage(chatId,
-            `Group Verified! (A)\n\n` +
+          let messageText = `Group Verified! (A)\n\n` +
             `Group: ${groupInfo.groupName || link}\n` +
             `Type: ${typeIcon} ${typeLabel}\n` +
             `${priceInfo}\n` +
             `Age: ${yearMonthInfo}\n` +
-            `Members: ${groupInfo.memberCount || "Unknown"}\n\n` +
-            `This group is approved!\n\n` +
-            `Next step: Transfer ownership of this group to our account.\n` +
-            `Once you transfer ownership, send /checkowner to verify and receive payment.`,
+            `Members: ${groupInfo.memberCount || "Unknown"}\n\n`;
+            
+          if (priceComparisonMsg) {
+            messageText += `${priceComparisonMsg}\n\n`;
+          } else {
+            messageText += `This group is approved!\n\n`;
+          }
+          
+          messageText += `Next step: Transfer ownership of this group to our account.\n` +
+            `Once you transfer ownership, send /checkowner to verify and receive payment.`;
+          
+          await bot?.sendMessage(chatId, messageText,
             {
               reply_markup: {
                 inline_keyboard: [[
