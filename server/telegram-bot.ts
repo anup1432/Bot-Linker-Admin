@@ -592,6 +592,20 @@ export function initTelegramBot(token: string): TelegramBot | null {
             verifiedAt: new Date(),
             paymentAmount: null,
           });
+        } else {
+          let rejectionReason = "";
+          if (!isOldEnough) {
+            rejectionReason = `❌ Group is too new!\nMinimum required age: ${minAgeDays} days\nGroup age: ${groupAge} days`;
+          } else if (!hasAcceptableDeletions) {
+            rejectionReason = `❌ Too many deleted messages (${deletedMessages})\nMaximum allowed: 100`;
+          }
+          
+          await bot?.sendMessage(chatId,
+            `Group Not Approved\n\n` +
+            `Group: ${groupInfo.groupName || link}\n` +
+            `Type: ${groupType === "used" ? "✓" : "⊘"} ${groupType === "used" ? "Used Group" : "Unused Group"}\n\n` +
+            `${rejectionReason}`
+          );
         }
       }
     });
