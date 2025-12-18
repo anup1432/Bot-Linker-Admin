@@ -5,14 +5,12 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { YearPricing } from "@shared/schema";
-import { RefreshCw, DollarSign, Plus, Trash2, Power, PowerOff, Calendar } from "lucide-react";
+import { RefreshCw, DollarSign, Trash2, Power, PowerOff, Edit2 } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface YearPricingFormData {
   startYear: number;
@@ -22,7 +20,6 @@ interface YearPricingFormData {
   pricePerGroup: number;
 }
 
-const currentYear = new Date().getFullYear();
 const months = [
   { value: 1, label: "January" },
   { value: 2, label: "February" },
@@ -40,18 +37,7 @@ const months = [
 
 export default function AdminPricingPage() {
   const { toast } = useToast();
-  const [showForm, setShowForm] = useState(false);
-  const [pricingType, setPricingType] = useState<"range" | "yearly" | "monthly">("range");
-
-  const form = useForm<YearPricingFormData>({
-    defaultValues: {
-      startYear: 2016,
-      endYear: 2022,
-      month: null,
-      category: "used",
-      pricePerGroup: 100,
-    },
-  });
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   const { data: yearPricingList = [], isLoading } = useQuery<YearPricing[]>({
     queryKey: ["/api/admin/year-pricing"],
@@ -65,8 +51,6 @@ export default function AdminPricingPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/year-pricing"] });
       toast({ title: "Pricing added successfully" });
-      setShowForm(false);
-      form.reset();
     },
     onError: () => {
       toast({ title: "Failed to add pricing", variant: "destructive" });
@@ -101,32 +85,23 @@ export default function AdminPricingPage() {
     },
   });
 
-  const onSubmit = (data: YearPricingFormData) => {
-    const submitData = { ...data };
-    
-    if (pricingType === "range") {
-      submitData.month = null;
-    } else if (pricingType === "yearly") {
-      submitData.endYear = null;
-      submitData.month = null;
-    }
-    
-    createPricingMutation.mutate(submitData);
+  // Helper functions to find pricing
+  const findPricing = (startYear: number, endYear: number | null = null, month: number | null = null, category: string) => {
+    return yearPricingList.find(p => 
+      p.startYear === startYear && 
+      p.endYear === endYear && 
+      p.month === month && 
+      p.category === category
+    );
   };
 
-  const formatPricingPeriod = (pricing: YearPricing) => {
-    if (pricing.month) {
-      const monthName = months.find(m => m.value === pricing.month)?.label || "";
-      return `${monthName} ${pricing.startYear}`;
-    }
-    if (pricing.endYear && pricing.endYear !== pricing.startYear) {
-      return `${pricing.startYear} - ${pricing.endYear}`;
-    }
-    return `${pricing.startYear}`;
+  const getPricingByPeriod = (startYear: number, endYear: number | null = null, month: number | null = null) => {
+    return yearPricingList.filter(p => 
+      p.startYear === startYear && 
+      p.endYear === endYear && 
+      p.month === month
+    );
   };
-
-  const usedPricing = yearPricingList.filter(p => p.category === "used");
-  const unusedPricing = yearPricingList.filter(p => p.category === "unused");
 
   if (isLoading) {
     return (
@@ -138,317 +113,346 @@ export default function AdminPricingPage() {
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <DollarSign className="h-6 w-6" />
-          <h1 className="text-2xl font-semibold" data-testid="text-page-title">Year-Based Pricing</h1>
-        </div>
-        <Button onClick={() => setShowForm(!showForm)} data-testid="button-add-pricing">
-          <Plus className="mr-1 h-4 w-4" />
-          Add Pricing
-        </Button>
+      <div className="flex items-center gap-3">
+        <DollarSign className="h-6 w-6" />
+        <h1 className="text-2xl font-semibold" data-testid="text-page-title">Pricing Configuration</h1>
       </div>
 
-      {showForm && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5" />
-              Add Year-Based Pricing
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-4">
-              <div className="flex gap-2 flex-wrap">
-                <Button
-                  type="button"
-                  variant={pricingType === "range" ? "default" : "outline"}
-                  onClick={() => {
-                    setPricingType("range");
-                    form.setValue("endYear", 2022);
-                    form.setValue("month", null);
-                  }}
-                  data-testid="button-type-range"
-                >
-                  Year Range (e.g. 2016-2022)
-                </Button>
-                <Button
-                  type="button"
-                  variant={pricingType === "yearly" ? "default" : "outline"}
-                  onClick={() => {
-                    setPricingType("yearly");
-                    form.setValue("endYear", null);
-                    form.setValue("month", null);
-                  }}
-                  data-testid="button-type-yearly"
-                >
-                  Single Year (e.g. 2023)
-                </Button>
-                <Button
-                  type="button"
-                  variant={pricingType === "monthly" ? "default" : "outline"}
-                  onClick={() => {
-                    setPricingType("monthly");
-                    form.setValue("startYear", currentYear);
-                    form.setValue("endYear", null);
-                  }}
-                  data-testid="button-type-monthly"
-                >
-                  Monthly ({currentYear})
-                </Button>
+      {/* 2016-22 Range Pricing Section */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg">2016 - 2022 (Same Rate)</CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">Set pricing for groups created between 2016-2022</p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-2">
+            <PricingInputCard
+              label="Used Groups"
+              pricing={findPricing(2016, 2022, null, "used")}
+              onSave={(price) => {
+                const existing = findPricing(2016, 2022, null, "used");
+                if (existing) {
+                  togglePricingMutation.mutate({ id: existing.id, isActive: true });
+                } else {
+                  createPricingMutation.mutate({
+                    startYear: 2016,
+                    endYear: 2022,
+                    month: null,
+                    category: "used",
+                    pricePerGroup: price,
+                  });
+                }
+              }}
+              onDelete={(id) => deletePricingMutation.mutate(id)}
+              onToggle={(id, active) => togglePricingMutation.mutate({ id, isActive: active })}
+              isPending={createPricingMutation.isPending || togglePricingMutation.isPending || deletePricingMutation.isPending}
+            />
+            <PricingInputCard
+              label="Unused Groups"
+              pricing={findPricing(2016, 2022, null, "unused")}
+              onSave={(price) => {
+                const existing = findPricing(2016, 2022, null, "unused");
+                if (existing) {
+                  togglePricingMutation.mutate({ id: existing.id, isActive: true });
+                } else {
+                  createPricingMutation.mutate({
+                    startYear: 2016,
+                    endYear: 2022,
+                    month: null,
+                    category: "unused",
+                    pricePerGroup: price,
+                  });
+                }
+              }}
+              onDelete={(id) => deletePricingMutation.mutate(id)}
+              onToggle={(id, active) => togglePricingMutation.mutate({ id, isActive: active })}
+              isPending={createPricingMutation.isPending || togglePricingMutation.isPending || deletePricingMutation.isPending}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 2023 Yearly Pricing Section */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg">2023 (Yearly)</CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">Set pricing for groups created in 2023</p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-2">
+            <PricingInputCard
+              label="Used Groups"
+              pricing={findPricing(2023, null, null, "used")}
+              onSave={(price) => {
+                const existing = findPricing(2023, null, null, "used");
+                if (existing) {
+                  togglePricingMutation.mutate({ id: existing.id, isActive: true });
+                } else {
+                  createPricingMutation.mutate({
+                    startYear: 2023,
+                    endYear: null,
+                    month: null,
+                    category: "used",
+                    pricePerGroup: price,
+                  });
+                }
+              }}
+              onDelete={(id) => deletePricingMutation.mutate(id)}
+              onToggle={(id, active) => togglePricingMutation.mutate({ id, isActive: active })}
+              isPending={createPricingMutation.isPending || togglePricingMutation.isPending || deletePricingMutation.isPending}
+            />
+            <PricingInputCard
+              label="Unused Groups"
+              pricing={findPricing(2023, null, null, "unused")}
+              onSave={(price) => {
+                const existing = findPricing(2023, null, null, "unused");
+                if (existing) {
+                  togglePricingMutation.mutate({ id: existing.id, isActive: true });
+                } else {
+                  createPricingMutation.mutate({
+                    startYear: 2023,
+                    endYear: null,
+                    month: null,
+                    category: "unused",
+                    pricePerGroup: price,
+                  });
+                }
+              }}
+              onDelete={(id) => deletePricingMutation.mutate(id)}
+              onToggle={(id, active) => togglePricingMutation.mutate({ id, isActive: active })}
+              isPending={createPricingMutation.isPending || togglePricingMutation.isPending || deletePricingMutation.isPending}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 2024 Monthly Pricing Section */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg">2024 (Monthly Pricing)</CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">Set pricing for each month in 2024</p>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {months.map((month) => (
+              <div key={month.value} className="border rounded-lg p-4">
+                <h3 className="font-semibold mb-3 text-base">{month.label}</h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <PricingInputCard
+                    label={`${month.label} - Used Groups`}
+                    pricing={findPricing(2024, null, month.value, "used")}
+                    onSave={(price) => {
+                      const existing = findPricing(2024, null, month.value, "used");
+                      if (existing) {
+                        togglePricingMutation.mutate({ id: existing.id, isActive: true });
+                      } else {
+                        createPricingMutation.mutate({
+                          startYear: 2024,
+                          endYear: null,
+                          month: month.value,
+                          category: "used",
+                          pricePerGroup: price,
+                        });
+                      }
+                    }}
+                    onDelete={(id) => deletePricingMutation.mutate(id)}
+                    onToggle={(id, active) => togglePricingMutation.mutate({ id, isActive: active })}
+                    isPending={createPricingMutation.isPending || togglePricingMutation.isPending || deletePricingMutation.isPending}
+                    isCompact
+                  />
+                  <PricingInputCard
+                    label={`${month.label} - Unused Groups`}
+                    pricing={findPricing(2024, null, month.value, "unused")}
+                    onSave={(price) => {
+                      const existing = findPricing(2024, null, month.value, "unused");
+                      if (existing) {
+                        togglePricingMutation.mutate({ id: existing.id, isActive: true });
+                      } else {
+                        createPricingMutation.mutate({
+                          startYear: 2024,
+                          endYear: null,
+                          month: month.value,
+                          category: "unused",
+                          pricePerGroup: price,
+                        });
+                      }
+                    }}
+                    onDelete={(id) => deletePricingMutation.mutate(id)}
+                    onToggle={(id, active) => togglePricingMutation.mutate({ id, isActive: active })}
+                    isPending={createPricingMutation.isPending || togglePricingMutation.isPending || deletePricingMutation.isPending}
+                    isCompact
+                  />
+                </div>
               </div>
-            </div>
-
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <FormField
-                    control={form.control}
-                    name="startYear"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{pricingType === "range" ? "Start Year" : "Year"}</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="number" 
-                            {...field} 
-                            onChange={(e) => field.onChange(parseInt(e.target.value))}
-                            data-testid="input-start-year"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  {pricingType === "range" && (
-                    <FormField
-                      control={form.control}
-                      name="endYear"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>End Year</FormLabel>
-                          <FormControl>
-                            <Input 
-                              type="number" 
-                              value={field.value ?? ""} 
-                              onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : null)}
-                              data-testid="input-end-year"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  )}
-
-                  {pricingType === "monthly" && (
-                    <FormField
-                      control={form.control}
-                      name="month"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Month</FormLabel>
-                          <Select
-                            value={field.value?.toString() || ""}
-                            onValueChange={(value) => field.onChange(parseInt(value))}
-                          >
-                            <FormControl>
-                              <SelectTrigger data-testid="select-month">
-                                <SelectValue placeholder="Select month" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {months.map((month) => (
-                                <SelectItem key={month.value} value={month.value.toString()}>
-                                  {month.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  )}
-
-                  <FormField
-                    control={form.control}
-                    name="category"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Category</FormLabel>
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <FormControl>
-                            <SelectTrigger data-testid="select-category">
-                              <SelectValue placeholder="Select category" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="used">Used</SelectItem>
-                            <SelectItem value="unused">Unused</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="pricePerGroup"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Price (Rs.)</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="number" 
-                            {...field} 
-                            onChange={(e) => field.onChange(parseFloat(e.target.value))}
-                            data-testid="input-price"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button type="submit" disabled={createPricingMutation.isPending} data-testid="button-save-pricing">
-                    Save Pricing
-                  </Button>
-                  <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
-                    Cancel
-                  </Button>
-                </div>
-              </form>
-            </Form>
-          </CardContent>
-        </Card>
-      )}
-
-      <Tabs defaultValue="used" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 max-w-md">
-          <TabsTrigger value="used" data-testid="tab-used">
-            Used Groups ({usedPricing.length})
-          </TabsTrigger>
-          <TabsTrigger value="unused" data-testid="tab-unused">
-            Unused Groups ({unusedPricing.length})
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="used" className="mt-4">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {usedPricing.length === 0 ? (
-              <Card className="col-span-full">
-                <CardContent className="flex items-center justify-center py-8">
-                  <p className="text-muted-foreground">No pricing for Used groups. Add one to get started.</p>
-                </CardContent>
-              </Card>
-            ) : (
-              usedPricing.map((pricing) => (
-                <PricingCard 
-                  key={pricing.id} 
-                  pricing={pricing}
-                  onToggle={(isActive) => togglePricingMutation.mutate({ id: pricing.id, isActive })}
-                  onDelete={() => deletePricingMutation.mutate(pricing.id)}
-                  formatPeriod={formatPricingPeriod}
-                  isPending={togglePricingMutation.isPending || deletePricingMutation.isPending}
-                />
-              ))
-            )}
+            ))}
           </div>
-        </TabsContent>
-
-        <TabsContent value="unused" className="mt-4">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {unusedPricing.length === 0 ? (
-              <Card className="col-span-full">
-                <CardContent className="flex items-center justify-center py-8">
-                  <p className="text-muted-foreground">No pricing for Unused groups. Add one to get started.</p>
-                </CardContent>
-              </Card>
-            ) : (
-              unusedPricing.map((pricing) => (
-                <PricingCard 
-                  key={pricing.id} 
-                  pricing={pricing}
-                  onToggle={(isActive) => togglePricingMutation.mutate({ id: pricing.id, isActive })}
-                  onDelete={() => deletePricingMutation.mutate(pricing.id)}
-                  formatPeriod={formatPricingPeriod}
-                  isPending={togglePricingMutation.isPending || deletePricingMutation.isPending}
-                />
-              ))
-            )}
-          </div>
-        </TabsContent>
-      </Tabs>
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-function PricingCard({ 
-  pricing, 
-  onToggle, 
-  onDelete, 
-  formatPeriod,
-  isPending 
-}: { 
-  pricing: YearPricing;
-  onToggle: (isActive: boolean) => void;
-  onDelete: () => void;
-  formatPeriod: (pricing: YearPricing) => string;
+function PricingInputCard({
+  label,
+  pricing,
+  onSave,
+  onDelete,
+  onToggle,
+  isPending,
+  isCompact = false,
+}: {
+  label: string;
+  pricing: YearPricing | undefined;
+  onSave: (price: number) => void;
+  onDelete: (id: number) => void;
+  onToggle: (id: number, active: boolean) => void;
   isPending: boolean;
+  isCompact?: boolean;
 }) {
-  const period = formatPeriod(pricing);
-  const isMonthly = pricing.month !== null;
+  const [isEditing, setIsEditing] = useState(false);
+  const [inputValue, setInputValue] = useState(pricing?.pricePerGroup.toString() || "");
+
+  const handleSave = () => {
+    if (inputValue.trim()) {
+      onSave(parseFloat(inputValue));
+      setIsEditing(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setInputValue(pricing?.pricePerGroup.toString() || "");
+    setIsEditing(false);
+  };
+
+  if (!pricing && isEditing) {
+    return (
+      <div className={`border rounded-lg p-3 ${isCompact ? "p-2" : ""}`}>
+        <label className={`text-sm font-medium block mb-2 ${isCompact ? "text-xs mb-1" : ""}`}>{label}</label>
+        <div className="flex gap-2">
+          <Input
+            type="number"
+            placeholder="Enter price"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            className="flex-1"
+            data-testid={`input-price-${label}`}
+          />
+          <Button
+            size={isCompact ? "sm" : "default"}
+            onClick={handleSave}
+            disabled={isPending}
+            data-testid={`button-save-${label}`}
+          >
+            Save
+          </Button>
+          <Button
+            size={isCompact ? "sm" : "default"}
+            variant="outline"
+            onClick={handleCancel}
+          >
+            Cancel
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!pricing) {
+    return (
+      <div className={`border border-dashed rounded-lg p-3 flex items-center justify-center min-h-20 ${isCompact ? "p-2 min-h-16" : ""}`}>
+        <Button
+          variant="outline"
+          size={isCompact ? "sm" : "default"}
+          onClick={() => setIsEditing(true)}
+          disabled={isPending}
+          data-testid={`button-add-${label}`}
+        >
+          <Edit2 className={`${isCompact ? "h-3 w-3" : "h-4 w-4"} mr-1`} />
+          {isCompact ? "Add" : "Add Pricing"}
+        </Button>
+      </div>
+    );
+  }
 
   return (
-    <Card 
-      className={!pricing.isActive ? "opacity-60" : ""}
-      data-testid={`card-pricing-${pricing.id}`}
-    >
-      <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <CardTitle className="text-lg font-medium">
-            Rs. {pricing.pricePerGroup}
-          </CardTitle>
-          {isMonthly && (
-            <Badge variant="secondary" className="text-xs">Monthly</Badge>
-          )}
-        </div>
+    <div className={`border rounded-lg p-3 ${isCompact ? "p-2" : ""}`}>
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <label className={`text-sm font-medium ${isCompact ? "text-xs" : ""}`}>{label}</label>
         <div className="flex items-center gap-1">
           <Switch
             checked={pricing.isActive}
-            onCheckedChange={onToggle}
+            onCheckedChange={(active) => onToggle(pricing.id, active)}
             disabled={isPending}
             data-testid={`switch-active-${pricing.id}`}
           />
-          <Button 
-            size="icon" 
+          <Button
+            size="icon"
             variant="ghost"
-            onClick={onDelete}
+            className={`h-7 w-7 ${isCompact ? "h-6 w-6" : ""}`}
+            onClick={() => onDelete(pricing.id)}
             disabled={isPending}
             data-testid={`button-delete-${pricing.id}`}
           >
-            <Trash2 className="h-4 w-4 text-destructive" />
+            <Trash2 className="h-3 w-3 text-destructive" />
           </Button>
         </div>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-sm text-muted-foreground">
-            {period}
-          </p>
-          <Badge variant={pricing.isActive ? "default" : "outline"}>
-            {pricing.isActive ? (
-              <><Power className="h-3 w-3 mr-1" /> Active</>
-            ) : (
-              <><PowerOff className="h-3 w-3 mr-1" /> Stopped</>
-            )}
-          </Badge>
-        </div>
-      </CardContent>
-    </Card>
+      </div>
+      
+      <div className={`flex items-center gap-2 ${isCompact ? "gap-1" : ""}`}>
+        {isEditing ? (
+          <>
+            <Input
+              type="number"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              className={`flex-1 ${isCompact ? "text-sm h-8" : ""}`}
+              data-testid={`input-edit-${pricing.id}`}
+            />
+            <Button
+              size={isCompact ? "sm" : "default"}
+              onClick={handleSave}
+              disabled={isPending}
+              className={`${isCompact ? "h-8" : ""}`}
+            >
+              Save
+            </Button>
+            <Button
+              size={isCompact ? "sm" : "default"}
+              variant="outline"
+              onClick={handleCancel}
+              className={`${isCompact ? "h-8" : ""}`}
+            >
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <>
+            <span className={`text-2xl font-bold text-primary ${isCompact ? "text-lg" : ""}`}>
+              ₹{pricing.pricePerGroup}
+            </span>
+            <Button
+              size="icon"
+              variant="ghost"
+              className={`h-7 w-7 ${isCompact ? "h-6 w-6" : ""}`}
+              onClick={() => {
+                setInputValue(pricing.pricePerGroup.toString());
+                setIsEditing(true);
+              }}
+              disabled={isPending}
+              data-testid={`button-edit-${pricing.id}`}
+            >
+              <Edit2 className={`${isCompact ? "h-3 w-3" : "h-4 w-4"}`} />
+            </Button>
+            <Badge variant={pricing.isActive ? "default" : "outline"} className={isCompact ? "text-xs" : ""}>
+              {pricing.isActive ? (
+                <><Power className="h-2 w-2 mr-1" /> Active</>
+              ) : (
+                <><PowerOff className="h-2 w-2 mr-1" /> Stopped</>
+              )}
+            </Badge>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
