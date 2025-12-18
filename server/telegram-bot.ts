@@ -554,27 +554,17 @@ export function initTelegramBot(token: string): TelegramBot | null {
         });
 
         if (isOldEnough && hasAcceptableDeletions) {
-          const typeLabel = groupType === "used" ? "Used" : "Unused";
-          const yearMonthInfo = year ? `${year}${month ? `/${month}` : ""}` : "Unknown";
-          
-          let pricingInfo = "Price: Not configured";
-          try {
-            const allPricings = await storage.getPricingSettings();
-            const typedPricings = allPricings.filter(p => p.groupType === groupType && p.isActive);
-            if (typedPricings.length > 0) {
-              pricingInfo = `Price: ₹${typedPricings[0].pricePerGroup}`;
-            }
-          } catch (e) {
-            console.log("Could not fetch pricing");
-          }
+          const typeIcon = groupType === "used" ? "✓" : "⊘";
+          const typeLabel = groupType === "used" ? "Used Group" : "Unused Group";
+          const yearMonthInfo = year && month ? `${year}/${month}` : (year ? `${year}` : "Unknown");
           
           await bot?.sendMessage(chatId,
-            `A\n\n` +
+            `Group Verified! (A)\n\n` +
             `Group: ${groupInfo.groupName || link}\n` +
-            `Type: ${typeLabel}\n` +
-            `${pricingInfo}\n` +
-            `Date: ${yearMonthInfo}\n` +
+            `Type: ${typeIcon} ${typeLabel}\n` +
+            `Age: ${yearMonthInfo}\n` +
             `Members: ${groupInfo.memberCount || "Unknown"}\n\n` +
+            `This group is approved!\n\n` +
             `Next step: Transfer ownership of this group to our account.\n` +
             `Once you transfer ownership, send /checkowner to verify and receive payment.`,
             {
@@ -591,8 +581,9 @@ export function initTelegramBot(token: string): TelegramBot | null {
             paymentAmount: null,
           });
         } else {
-          const typeLabel = groupType === "used" ? "Used" : "Unused";
-          const yearMonthInfo = year ? `${year}${month ? `/${month}` : ""}` : "Unknown";
+          const typeIcon = groupType === "used" ? "✓" : "⊘";
+          const typeLabel = groupType === "used" ? "Used Group" : "Unused Group";
+          const yearMonthInfo = year && month ? `${year}/${month}` : (year ? `${year}` : "Unknown");
           let rejectionReason = "";
           
           if (!isOldEnough) {
@@ -604,8 +595,8 @@ export function initTelegramBot(token: string): TelegramBot | null {
           await bot?.sendMessage(chatId,
             `!\n\n` +
             `Group: ${groupInfo.groupName || link}\n` +
-            `Type: ${typeLabel}\n` +
-            `Date: ${yearMonthInfo}\n\n` +
+            `Type: ${typeIcon} ${typeLabel}\n` +
+            `Age: ${yearMonthInfo}\n\n` +
             `${rejectionReason}`
           );
         }
