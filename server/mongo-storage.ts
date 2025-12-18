@@ -575,6 +575,22 @@ export class MongoStorage {
   }
 
   async getYearPricing(year: number, month: number | null, category: string): Promise<YearPricingData | undefined> {
+    // For 2024, prioritize monthly pricing over yearly
+    if (year === 2024 && month !== null) {
+      const monthlyQuery = {
+        isActive: true,
+        category,
+        startYear: 2024,
+        endYear: null,
+        month: month
+      };
+      const monthlyDoc = await YearPricing.findOne(monthlyQuery);
+      if (monthlyDoc) {
+        return toYearPricingData(monthlyDoc);
+      }
+    }
+
+    // Fall back to yearly or range pricing
     let query: any = {
       isActive: true,
       category,
@@ -582,14 +598,9 @@ export class MongoStorage {
       $or: [
         { endYear: null },
         { endYear: { $gte: year } }
-      ]
+      ],
+      month: null // Only get yearly/range pricing here
     };
-
-    if (month !== null) {
-      query.month = month;
-    } else {
-      query.month = null;
-    }
 
     const doc = await YearPricing.findOne(query);
     return doc ? toYearPricingData(doc) : undefined;
