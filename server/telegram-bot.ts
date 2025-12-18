@@ -564,16 +564,23 @@ export function initTelegramBot(token: string): TelegramBot | null {
           
           try {
             const allPricings = await storage.getPricingSettings();
+            console.log(`[PRICING] All pricing settings:`, JSON.stringify(allPricings));
+            
             const typedPricing = allPricings.find(p => p.groupType === groupType && p.isActive);
             const otherTypePricing = allPricings.find(p => p.groupType !== groupType && p.isActive);
+            
+            console.log(`[PRICING] Group type: ${groupType}, Typed pricing:`, typedPricing);
+            console.log(`[PRICING] Other type pricing:`, otherTypePricing);
             
             if (typedPricing) {
               priceInfo = `Price: ₹${typedPricing.pricePerGroup}`;
               currentPrice = typedPricing.pricePerGroup;
               
               if (groupType === "used" && otherTypePricing) {
+                console.log(`[PRICING] Comparing: Used ₹${typedPricing.pricePerGroup} vs Unused ₹${otherTypePricing.pricePerGroup}`);
                 if (typedPricing.pricePerGroup < otherTypePricing.pricePerGroup) {
                   priceComparisonMsg = `Group is used - Price is low. If you want to sell, here's your price: ₹${typedPricing.pricePerGroup}`;
+                  console.log(`[PRICING] Used price is lower - showing comparison message`);
                 }
               }
             }
