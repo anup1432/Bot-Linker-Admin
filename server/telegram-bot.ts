@@ -554,16 +554,16 @@ export function initTelegramBot(token: string): TelegramBot | null {
         });
 
         if (isOldEnough && hasAcceptableDeletions) {
-          const deletionStatus = deletedMessages < 100 ? "✓ Intact Group" : "⊘ High Deletions";
+          const typeLabel = groupType === "used" ? "Used" : "Unused";
           const yearMonthInfo = year ? `${year}${month ? `/${month}` : ""}` : "Unknown";
           
           await bot?.sendMessage(chatId,
-            `Group Verified! (A)\n\n` +
+            `A\n\n` +
             `Group: ${groupInfo.groupName || link}\n` +
-            `Deleted Messages: ${deletedMessages} (${deletionStatus})\n` +
+            `Type: ${typeLabel}\n` +
+            `Deleted Messages: ${deletedMessages}\n` +
             `Age: ${groupAge} days old (${yearMonthInfo})\n` +
             `Members: ${groupInfo.memberCount || "Unknown"}\n\n` +
-            `This group is approved!\n\n` +
             `Next step: Transfer ownership of this group to our account.\n` +
             `Once you transfer ownership, send /checkowner to verify and receive payment.`,
             {
@@ -579,22 +579,23 @@ export function initTelegramBot(token: string): TelegramBot | null {
             verifiedAt: new Date(),
           });
         } else {
+          const typeLabel = groupType === "used" ? "Used" : "Unused";
           const yearMonthInfo = year ? `${year}${month ? `/${month}` : ""}` : "Unknown";
           let rejectionReason = "";
           
           if (!isOldEnough) {
-            rejectionReason = `Sorry, this group is too new.\nMinimum required age: ${minAgeDays} days`;
+            rejectionReason = `Group is too new.\nMinimum required age: ${minAgeDays} days`;
           } else if (!hasAcceptableDeletions) {
-            rejectionReason = `Sorry, this group has too many deleted messages (${deletedMessages}).\nMaximum allowed: 100 deleted messages`;
+            rejectionReason = `Too many deleted messages (${deletedMessages}).\nMax allowed: 100`;
           }
           
           await bot?.sendMessage(chatId,
-            `Group Rejected! (R)\n\n` +
+            `!\n\n` +
             `Group: ${groupInfo.groupName || link}\n` +
+            `Type: ${typeLabel}\n` +
             `Deleted Messages: ${deletedMessages}\n` +
             `Age: ${groupAge} days old (${yearMonthInfo})\n\n` +
-            `${rejectionReason}\n\n` +
-            `Please try with a different group.`
+            `${rejectionReason}`
           );
         }
       }

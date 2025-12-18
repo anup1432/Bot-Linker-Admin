@@ -42,6 +42,7 @@ export interface IPricingSettings extends Document {
   _id: mongoose.Types.ObjectId;
   minAgeDays: number;
   maxAgeDays: number | null;
+  groupType: 'used' | 'unused';
   pricePerGroup: number;
   isActive: boolean;
   createdAt: Date;
@@ -159,6 +160,7 @@ const groupJoinSchema = new Schema<IGroupJoin>({
 const pricingSettingsSchema = new Schema<IPricingSettings>({
   minAgeDays: { type: Number, required: true },
   maxAgeDays: { type: Number, default: null },
+  groupType: { type: String, enum: ['used', 'unused'], required: true },
   pricePerGroup: { type: Number, required: true },
   isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now },

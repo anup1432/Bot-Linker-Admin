@@ -48,6 +48,7 @@ export interface PricingSettingsData {
   id: string;
   minAgeDays: number;
   maxAgeDays: number | null;
+  groupType: 'used' | 'unused';
   pricePerGroup: number;
   isActive: boolean;
   createdAt: Date;
@@ -151,6 +152,10 @@ function toGroupJoinData(doc: IGroupJoin): GroupJoinData {
     groupName: doc.groupName,
     groupId: doc.groupId,
     groupAge: doc.groupAge,
+    groupYear: (doc as any).groupYear || null,
+    groupMonth: (doc as any).groupMonth || null,
+    messageCount: (doc as any).messageCount || null,
+    groupType: (doc as any).groupType || "unknown",
     status: doc.status,
     verificationStatus: doc.verificationStatus,
     ownershipTransferred: doc.ownershipTransferred,
@@ -169,6 +174,7 @@ function toPricingSettingsData(doc: IPricingSettings): PricingSettingsData {
     id: doc._id.toString(),
     minAgeDays: doc.minAgeDays,
     maxAgeDays: doc.maxAgeDays,
+    groupType: doc.groupType as 'used' | 'unused',
     pricePerGroup: doc.pricePerGroup,
     isActive: doc.isActive,
     createdAt: doc.createdAt,
