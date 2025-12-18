@@ -47,7 +47,8 @@ export const pricingSettings = pgTable("pricing_settings", {
 
 export const yearPricing = pgTable("year_pricing", {
   id: serial("id").primaryKey(),
-  year: integer("year").notNull(),
+  startYear: integer("start_year").notNull(),
+  endYear: integer("end_year"),
   month: integer("month"),
   category: text("category").notNull(),
   pricePerGroup: real("price_per_group").notNull(),

@@ -217,7 +217,7 @@ export class PostgresStorage implements IStorage {
   }
 
   async getAllYearPricing(): Promise<YearPricing[]> {
-    return db.select().from(yearPricing).orderBy(yearPricing.year, yearPricing.month);
+    return db.select().from(yearPricing).orderBy(yearPricing.startYear, yearPricing.month);
   }
 
   async getYearPricing(year: number, month: number | null, category: string): Promise<YearPricing | undefined> {
@@ -227,7 +227,8 @@ export class PostgresStorage implements IStorage {
         .from(yearPricing)
         .where(
           and(
-            eq(yearPricing.year, year),
+            lte(yearPricing.startYear, year),
+            or(isNull(yearPricing.endYear), gte(yearPricing.endYear, year)),
             eq(yearPricing.month, month),
             eq(yearPricing.category, category),
             eq(yearPricing.isActive, true)
@@ -240,7 +241,8 @@ export class PostgresStorage implements IStorage {
         .from(yearPricing)
         .where(
           and(
-            eq(yearPricing.year, year),
+            lte(yearPricing.startYear, year),
+            or(isNull(yearPricing.endYear), gte(yearPricing.endYear, year)),
             isNull(yearPricing.month),
             eq(yearPricing.category, category),
             eq(yearPricing.isActive, true)

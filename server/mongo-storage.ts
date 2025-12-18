@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 import {
   User, GroupJoin, PricingSettings, Withdrawal, AdminSettings,
-  BotSettings, ActivityLog, Notification, UserSession,
+  BotSettings, ActivityLog, Notification, UserSession, YearPricing,
   IUser, IGroupJoin, IPricingSettings, IWithdrawal, IAdminSettings,
-  IBotSettings, IActivityLog, INotification, IUserSession
+  IBotSettings, IActivityLog, INotification, IUserSession, IYearPricing
 } from './models';
 
 export interface UserData {
@@ -125,6 +125,17 @@ export interface UserSessionData {
   lastUsed: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface YearPricingData {
+  id: number;
+  startYear: number;
+  endYear: number | null;
+  month: number | null;
+  category: string;
+  pricePerGroup: number;
+  isActive: boolean;
+  createdAt: Date;
 }
 
 function toUserData(doc: IUser): UserData {
@@ -263,6 +274,19 @@ function toUserSessionData(doc: IUserSession): UserSessionData {
     lastUsed: doc.lastUsed,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
+  };
+}
+
+function toYearPricingData(doc: IYearPricing): YearPricingData {
+  return {
+    id: parseInt(doc._id.toString().slice(-8), 16),
+    startYear: doc.startYear,
+    endYear: doc.endYear,
+    month: doc.month,
+    category: doc.category,
+    pricePerGroup: doc.pricePerGroup,
+    isActive: doc.isActive,
+    createdAt: doc.createdAt,
   };
 }
 
@@ -543,6 +567,61 @@ export class MongoStorage {
   async deleteUserSession(id: string): Promise<boolean> {
     await UserSession.findByIdAndDelete(id);
     return true;
+  }
+
+  async getAllYearPricing(): Promise<YearPricingData[]> {
+    const docs = await YearPricing.find().sort({ startYear: 1, month: 1 });
+    return docs.map(toYearPricingData);
+  }
+
+  async getYearPricing(year: number, month: number | null, category: string): Promise<YearPricingData | undefined> {
+    let query: any = {
+      isActive: true,
+      category,
+      startYear: { $lte: year },
+      $or: [
+        { endYear: null },
+        { endYear: { $gte: year } }
+      ]
+    };
+
+    if (month !== null) {
+      query.month = month;
+    } else {
+      query.month = null;
+    }
+
+    const doc = await YearPricing.findOne(query);
+    return doc ? toYearPricingData(doc) : undefined;
+  }
+
+  async createYearPricing(data: Partial<YearPricingData>): Promise<YearPricingData> {
+    const doc = await YearPricing.create(data);
+    return toYearPricingData(doc);
+  }
+
+  async updateYearPricing(id: number, updates: Partial<YearPricingData>): Promise<YearPricingData | undefined> {
+    const allDocs = await YearPricing.find();
+    for (const doc of allDocs) {
+      const docId = parseInt(doc._id.toString().slice(-8), 16);
+      if (docId === id) {
+        const updated = await YearPricing.findByIdAndUpdate(doc._id, updates, { new: true });
+        return updated ? toYearPricingData(updated) : undefined;
+      }
+    }
+    return undefined;
+  }
+
+  async deleteYearPricing(id: number): Promise<boolean> {
+    const allDocs = await YearPricing.find();
+    for (const doc of allDocs) {
+      const docId = parseInt(doc._id.toString().slice(-8), 16);
+      if (docId === id) {
+        await YearPricing.findByIdAndDelete(doc._id);
+        return true;
+      }
+    }
+    return false;
   }
 }
 

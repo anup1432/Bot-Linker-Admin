@@ -23,55 +23,95 @@ const pendingSessions: Map<string, {
   isAdmin?: boolean;
 }> = new Map();
 
-function estimateGroupAgeFromId(chatId: bigInt.BigInteger | number | string): number {
-  const id = typeof chatId === 'string' ? BigInt(chatId.replace('-100', '').replace('-', '')) : 
-             typeof chatId === 'number' ? BigInt(Math.abs(chatId)) :
-             chatId.valueOf ? BigInt(String(chatId.valueOf()).replace('-100', '').replace('-', '')) : BigInt(0);
+const TELEGRAM_ID_REFERENCE_POINTS = [
+  { id: BigInt(1000000000), date: new Date('2015-06-01') },
+  { id: BigInt(1050000000), date: new Date('2015-09-01') },
+  { id: BigInt(1100000000), date: new Date('2016-01-01') },
+  { id: BigInt(1150000000), date: new Date('2016-04-15') },
+  { id: BigInt(1200000000), date: new Date('2016-08-01') },
+  { id: BigInt(1250000000), date: new Date('2016-11-15') },
+  { id: BigInt(1300000000), date: new Date('2017-03-01') },
+  { id: BigInt(1350000000), date: new Date('2017-07-01') },
+  { id: BigInt(1400000000), date: new Date('2018-01-01') },
+  { id: BigInt(1450000000), date: new Date('2018-06-01') },
+  { id: BigInt(1500000000), date: new Date('2019-01-01') },
+  { id: BigInt(1550000000), date: new Date('2019-06-01') },
+  { id: BigInt(1600000000), date: new Date('2020-01-01') },
+  { id: BigInt(1650000000), date: new Date('2020-06-01') },
+  { id: BigInt(1700000000), date: new Date('2021-01-01') },
+  { id: BigInt(1750000000), date: new Date('2021-06-01') },
+  { id: BigInt(1800000000), date: new Date('2022-01-01') },
+  { id: BigInt(1850000000), date: new Date('2022-06-01') },
+  { id: BigInt(1900000000), date: new Date('2023-01-01') },
+  { id: BigInt(1925000000), date: new Date('2023-04-01') },
+  { id: BigInt(1950000000), date: new Date('2023-07-01') },
+  { id: BigInt(1975000000), date: new Date('2023-10-01') },
+  { id: BigInt(2000000000), date: new Date('2024-01-01') },
+  { id: BigInt(2020000000), date: new Date('2024-03-01') },
+  { id: BigInt(2040000000), date: new Date('2024-05-01') },
+  { id: BigInt(2060000000), date: new Date('2024-07-01') },
+  { id: BigInt(2080000000), date: new Date('2024-09-01') },
+  { id: BigInt(2100000000), date: new Date('2024-11-01') },
+  { id: BigInt(2120000000), date: new Date('2024-12-15') },
+];
+
+function parseGroupId(chatId: bigInt.BigInteger | number | string): bigint {
+  if (typeof chatId === 'string') {
+    let cleaned = chatId.replace('-100', '').replace('-', '');
+    return BigInt(cleaned);
+  }
+  if (typeof chatId === 'number') {
+    return BigInt(Math.abs(chatId));
+  }
+  if (chatId && typeof chatId.valueOf === 'function') {
+    let str = String(chatId.valueOf()).replace('-100', '').replace('-', '');
+    return BigInt(str);
+  }
+  return BigInt(0);
+}
+
+function estimateCreationDateFromId(chatId: bigInt.BigInteger | number | string): Date {
+  const id = parseGroupId(chatId);
   
-  const referencePoints = [
-    { id: BigInt(1000000000), date: new Date('2015-06-01') },
-    { id: BigInt(1100000000), date: new Date('2016-01-01') },
-    { id: BigInt(1200000000), date: new Date('2016-08-01') },
-    { id: BigInt(1300000000), date: new Date('2017-03-01') },
-    { id: BigInt(1400000000), date: new Date('2018-01-01') },
-    { id: BigInt(1500000000), date: new Date('2019-01-01') },
-    { id: BigInt(1600000000), date: new Date('2020-01-01') },
-    { id: BigInt(1700000000), date: new Date('2021-01-01') },
-    { id: BigInt(1800000000), date: new Date('2022-01-01') },
-    { id: BigInt(1900000000), date: new Date('2023-01-01') },
-    { id: BigInt(2000000000), date: new Date('2024-01-01') },
-    { id: BigInt(2100000000), date: new Date('2024-12-01') },
-  ];
+  if (id < TELEGRAM_ID_REFERENCE_POINTS[0].id) {
+    return new Date('2014-06-01');
+  }
   
-  let lowerRef = referencePoints[0];
-  let upperRef = referencePoints[referencePoints.length - 1];
+  if (id >= TELEGRAM_ID_REFERENCE_POINTS[TELEGRAM_ID_REFERENCE_POINTS.length - 1].id) {
+    return new Date();
+  }
   
-  for (let i = 0; i < referencePoints.length - 1; i++) {
-    if (id >= referencePoints[i].id && id < referencePoints[i + 1].id) {
-      lowerRef = referencePoints[i];
-      upperRef = referencePoints[i + 1];
+  let lowerRef = TELEGRAM_ID_REFERENCE_POINTS[0];
+  let upperRef = TELEGRAM_ID_REFERENCE_POINTS[1];
+  
+  for (let i = 0; i < TELEGRAM_ID_REFERENCE_POINTS.length - 1; i++) {
+    if (id >= TELEGRAM_ID_REFERENCE_POINTS[i].id && id < TELEGRAM_ID_REFERENCE_POINTS[i + 1].id) {
+      lowerRef = TELEGRAM_ID_REFERENCE_POINTS[i];
+      upperRef = TELEGRAM_ID_REFERENCE_POINTS[i + 1];
       break;
     }
-  }
-  
-  if (id < referencePoints[0].id) {
-    const estimatedDate = new Date('2014-01-01');
-    const now = new Date();
-    return Math.floor((now.getTime() - estimatedDate.getTime()) / (1000 * 60 * 60 * 24));
-  }
-  
-  if (id > referencePoints[referencePoints.length - 1].id) {
-    return 0;
   }
   
   const idRange = Number(upperRef.id - lowerRef.id);
   const timeRange = upperRef.date.getTime() - lowerRef.date.getTime();
   const idOffset = Number(id - lowerRef.id);
   const estimatedTime = lowerRef.date.getTime() + (idOffset / idRange) * timeRange;
-  const estimatedDate = new Date(estimatedTime);
   
+  return new Date(estimatedTime);
+}
+
+function estimateGroupAgeFromId(chatId: bigInt.BigInteger | number | string): number {
+  const estimatedDate = estimateCreationDateFromId(chatId);
   const now = new Date();
   return Math.floor((now.getTime() - estimatedDate.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+export function estimateGroupYearAndMonthFromId(chatId: bigInt.BigInteger | number | string): { year: number, month: number } {
+  const estimatedDate = estimateCreationDateFromId(chatId);
+  return { 
+    year: estimatedDate.getFullYear(), 
+    month: estimatedDate.getMonth() + 1 
+  };
 }
 
 export function extractGroupYearAndMonth(date: Date | null): { year: number | null, month: number | null } {
