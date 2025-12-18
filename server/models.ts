@@ -22,6 +22,10 @@ export interface IGroupJoin extends Document {
   groupName: string | null;
   groupId: string | null;
   groupAge: number | null;
+  groupYear: number | null;
+  groupMonth: number | null;
+  messageCount: number | null;
+  groupType: string; // "used" or "unused" 
   status: string;
   verificationStatus: string | null;
   ownershipTransferred: boolean;

@@ -28,6 +28,10 @@ export interface GroupJoinData {
   groupName: string | null;
   groupId: string | null;
   groupAge: number | null;
+  groupYear: number | null;
+  groupMonth: number | null;
+  messageCount: number | null;
+  groupType: string;
   status: string;
   verificationStatus: string | null;
   ownershipTransferred: boolean;

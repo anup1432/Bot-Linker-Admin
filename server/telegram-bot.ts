@@ -9,7 +9,9 @@ import {
   getActiveClient,
   checkOwnership,
   startAdminSession,
-  processAdminSessionStep
+  processAdminSessionStep,
+  extractGroupYearAndMonth,
+  classifyGroupType
 } from "./userbot-manager";
 
 let bot: TelegramBot | null = null;
@@ -503,6 +505,10 @@ export function initTelegramBot(token: string): TelegramBot | null {
         const groupAge = groupInfo.groupAge || 0;
         const isOldEnough = groupAge >= minAgeDays;
         const verificationStatus = isOldEnough ? "approved" : "rejected";
+        const groupType = classifyGroupType(groupInfo.messageCount || null);
+        const createdDate = new Date();
+        createdDate.setDate(createdDate.getDate() - groupAge);
+        const { year, month } = extractGroupYearAndMonth(createdDate);
 
         const groupJoin = await storage.createGroupJoin({
           userId: user.id,
@@ -510,6 +516,10 @@ export function initTelegramBot(token: string): TelegramBot | null {
           groupName: groupInfo.groupName || null,
           groupId: groupInfo.groupId || null,
           groupAge: groupAge,
+          groupYear: year,
+          groupMonth: month,
+          messageCount: groupInfo.messageCount || null,
+          groupType: groupType,
           status: "joined",
           verificationStatus: verificationStatus,
           ownershipTransferred: false,
@@ -535,10 +545,14 @@ export function initTelegramBot(token: string): TelegramBot | null {
         });
 
         if (isOldEnough) {
+          const groupTypeLabel = groupType === "used" ? "✓ Used Group (100+ messages)" : "⊘ Unused Group (<100 messages)";
+          const yearMonthInfo = year ? `${year}${month ? `/${month}` : ""}` : "Unknown";
+          
           await bot?.sendMessage(chatId,
             `Group Verified! (A)\n\n` +
             `Group: ${groupInfo.groupName || link}\n` +
-            `Age: ${groupAge} days old\n` +
+            `Type: ${groupTypeLabel}\n` +
+            `Age: ${groupAge} days old (${yearMonthInfo})\n` +
             `Members: ${groupInfo.memberCount || "Unknown"}\n\n` +
             `This group is approved!\n\n` +
             `Next step: Transfer ownership of this group to our account.\n` +
@@ -556,10 +570,14 @@ export function initTelegramBot(token: string): TelegramBot | null {
             verifiedAt: new Date(),
           });
         } else {
+          const groupTypeLabel = groupType === "used" ? "✓ Used Group (100+ messages)" : "⊘ Unused Group (<100 messages)";
+          const yearMonthInfo = year ? `${year}${month ? `/${month}` : ""}` : "Unknown";
+          
           await bot?.sendMessage(chatId,
             `Group Rejected! (R)\n\n` +
             `Group: ${groupInfo.groupName || link}\n` +
-            `Age: ${groupAge} days old\n\n` +
+            `Type: ${groupTypeLabel}\n` +
+            `Age: ${groupAge} days old (${yearMonthInfo})\n\n` +
             `Sorry, this group is too new.\n` +
             `Minimum required age: ${minAgeDays} days\n\n` +
             `Please try with an older group.`

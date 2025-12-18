@@ -74,6 +74,16 @@ function estimateGroupAgeFromId(chatId: bigInt.BigInteger | number | string): nu
   return Math.floor((now.getTime() - estimatedDate.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+export function extractGroupYearAndMonth(date: Date | null): { year: number | null, month: number | null } {
+  if (!date) return { year: null, month: null };
+  return { year: date.getFullYear(), month: date.getMonth() + 1 };
+}
+
+export function classifyGroupType(messageCount: number | null): string {
+  if (!messageCount) return "unknown";
+  return messageCount < 100 ? "unused" : "used";
+}
+
 function encrypt(text: string): string {
   const key = getEncryptionKey();
   const iv = CryptoJS.lib.WordArray.random(16);
@@ -585,6 +595,7 @@ export async function joinGroupAndGetInfo(
   groupName?: string;
   groupAge?: number;
   memberCount?: number;
+  messageCount?: number;
   error?: string;
 }> {
   const client = await getActiveClient(telegramId);
@@ -702,12 +713,23 @@ export async function joinGroupAndGetInfo(
       }
     }
     
+    let messageCount = 0;
+    try {
+      const messages = await client.getMessages(chat, { limit: 1 });
+      if (messages && messages.length > 0) {
+        messageCount = (messages[0] as any).id || 0;
+      }
+    } catch (e) {
+      console.log("Could not get message count for group");
+    }
+    
     return {
       success: true,
       groupId,
       groupName,
       groupAge,
       memberCount,
+      messageCount,
     };
   } catch (error: any) {
     console.error("Error joining group:", error);
