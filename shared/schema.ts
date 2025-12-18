@@ -45,6 +45,16 @@ export const pricingSettings = pgTable("pricing_settings", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const yearPricing = pgTable("year_pricing", {
+  id: serial("id").primaryKey(),
+  year: integer("year").notNull(),
+  month: integer("month"),
+  category: text("category").notNull(),
+  pricePerGroup: real("price_per_group").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const withdrawals = pgTable("withdrawals", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id),
@@ -120,6 +130,7 @@ export const userSessions = pgTable("user_sessions", {
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertGroupJoinSchema = createInsertSchema(groupJoins).omit({ id: true, orderId: true, joinedAt: true, verifiedAt: true, ownershipVerifiedAt: true, createdAt: true });
 export const insertPricingSettingsSchema = createInsertSchema(pricingSettings).omit({ id: true, createdAt: true });
+export const insertYearPricingSchema = createInsertSchema(yearPricing).omit({ id: true, createdAt: true });
 export const insertWithdrawalSchema = createInsertSchema(withdrawals).omit({ id: true, processedAt: true, createdAt: true });
 export const insertAdminSettingsSchema = createInsertSchema(adminSettings).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertBotSettingsSchema = createInsertSchema(botSettings).omit({ id: true });
@@ -133,6 +144,8 @@ export type GroupJoin = typeof groupJoins.$inferSelect;
 export type InsertGroupJoin = z.infer<typeof insertGroupJoinSchema>;
 export type PricingSettings = typeof pricingSettings.$inferSelect;
 export type InsertPricingSettings = z.infer<typeof insertPricingSettingsSchema>;
+export type YearPricing = typeof yearPricing.$inferSelect;
+export type InsertYearPricing = z.infer<typeof insertYearPricingSchema>;
 export type Withdrawal = typeof withdrawals.$inferSelect;
 export type InsertWithdrawal = z.infer<typeof insertWithdrawalSchema>;
 export type AdminSettings = typeof adminSettings.$inferSelect;

@@ -794,5 +794,67 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/admin/year-pricing", requireAdmin, async (req, res) => {
+    try {
+      const pricing = await storage.getAllYearPricing();
+      res.json(pricing);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get year pricing" });
+    }
+  });
+
+  app.post("/api/admin/year-pricing", requireAdmin, async (req, res) => {
+    try {
+      const { year, month, category, pricePerGroup, isActive } = req.body;
+      const pricing = await storage.createYearPricing({
+        year,
+        month: month || null,
+        category,
+        pricePerGroup,
+        isActive: isActive !== undefined ? isActive : true,
+      });
+      res.json(pricing);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create year pricing" });
+    }
+  });
+
+  app.patch("/api/admin/year-pricing/:id", requireAdmin, async (req, res) => {
+    try {
+      const { year, month, category, pricePerGroup, isActive } = req.body;
+      const updated = await storage.updateYearPricing(parseInt(req.params.id), {
+        year,
+        month,
+        category,
+        pricePerGroup,
+        isActive,
+      });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update year pricing" });
+    }
+  });
+
+  app.delete("/api/admin/year-pricing/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteYearPricing(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete year pricing" });
+    }
+  });
+
+  app.get("/api/year-pricing/:year/:category", async (req, res) => {
+    try {
+      const year = parseInt(req.params.year);
+      const category = req.params.category;
+      const month = req.query.month ? parseInt(req.query.month as string) : null;
+      const pricing = await storage.getYearPricing(year, month, category);
+      res.json(pricing || null);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get pricing" });
+    }
+  });
+
   return httpServer;
 }

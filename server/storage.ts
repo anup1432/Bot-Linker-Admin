@@ -4,6 +4,7 @@ import {
   users,
   groupJoins,
   pricingSettings,
+  yearPricing,
   withdrawals,
   adminSettings,
   botSettings,
@@ -16,6 +17,8 @@ import {
   type InsertGroupJoin,
   type PricingSettings,
   type InsertPricingSettings,
+  type YearPricing,
+  type InsertYearPricing,
   type Withdrawal,
   type InsertWithdrawal,
   type AdminSettings,
@@ -57,6 +60,12 @@ export interface IStorage {
   createPricingSettings(settings: InsertPricingSettings): Promise<PricingSettings>;
   updatePricingSettings(id: number, updates: Partial<PricingSettings>): Promise<PricingSettings | undefined>;
   deletePricingSettings(id: number): Promise<boolean>;
+
+  getAllYearPricing(): Promise<YearPricing[]>;
+  getYearPricing(year: number, month: number | null, category: string): Promise<YearPricing | undefined>;
+  createYearPricing(pricing: InsertYearPricing): Promise<YearPricing>;
+  updateYearPricing(id: number, updates: Partial<YearPricing>): Promise<YearPricing | undefined>;
+  deleteYearPricing(id: number): Promise<boolean>;
 
   getWithdrawals(userId: number): Promise<Withdrawal[]>;
   getAllWithdrawals(): Promise<Withdrawal[]>;
@@ -204,6 +213,55 @@ export class PostgresStorage implements IStorage {
 
   async deletePricingSettings(id: number): Promise<boolean> {
     await db.delete(pricingSettings).where(eq(pricingSettings.id, id));
+    return true;
+  }
+
+  async getAllYearPricing(): Promise<YearPricing[]> {
+    return db.select().from(yearPricing).orderBy(yearPricing.year, yearPricing.month);
+  }
+
+  async getYearPricing(year: number, month: number | null, category: string): Promise<YearPricing | undefined> {
+    if (month !== null) {
+      const [pricing] = await db
+        .select()
+        .from(yearPricing)
+        .where(
+          and(
+            eq(yearPricing.year, year),
+            eq(yearPricing.month, month),
+            eq(yearPricing.category, category),
+            eq(yearPricing.isActive, true)
+          )
+        );
+      return pricing;
+    } else {
+      const [pricing] = await db
+        .select()
+        .from(yearPricing)
+        .where(
+          and(
+            eq(yearPricing.year, year),
+            isNull(yearPricing.month),
+            eq(yearPricing.category, category),
+            eq(yearPricing.isActive, true)
+          )
+        );
+      return pricing;
+    }
+  }
+
+  async createYearPricing(pricing: InsertYearPricing): Promise<YearPricing> {
+    const [p] = await db.insert(yearPricing).values(pricing).returning();
+    return p;
+  }
+
+  async updateYearPricing(id: number, updates: Partial<YearPricing>): Promise<YearPricing | undefined> {
+    const [p] = await db.update(yearPricing).set(updates).where(eq(yearPricing.id, id)).returning();
+    return p;
+  }
+
+  async deleteYearPricing(id: number): Promise<boolean> {
+    await db.delete(yearPricing).where(eq(yearPricing.id, id));
     return true;
   }
 
