@@ -512,8 +512,7 @@ export function initTelegramBot(token: string): TelegramBot | null {
         const groupAge = groupInfo.groupAge || 0;
         const deletedMessages = groupInfo.messageCount || 0;
         const isOldEnough = groupAge >= minAgeDays;
-        const hasAcceptableDeletions = deletedMessages < 100;
-        const verificationStatus = (isOldEnough && hasAcceptableDeletions) ? "approved" : "rejected";
+        const verificationStatus = isOldEnough ? "approved" : "rejected";
         const groupType = classifyGroupType(deletedMessages);
         const createdDate = new Date();
         createdDate.setDate(createdDate.getDate() - groupAge);
@@ -553,7 +552,7 @@ export function initTelegramBot(token: string): TelegramBot | null {
           data: JSON.stringify({ groupJoinId: groupJoin.id }),
         });
 
-        if (isOldEnough && hasAcceptableDeletions) {
+        if (isOldEnough) {
           const typeIcon = groupType === "used" ? "✓" : "⊘";
           const typeLabel = groupType === "used" ? "Used Group" : "Unused Group";
           const yearMonthInfo = year && month ? `${year}/${month}` : (year ? `${year}` : "Unknown");
@@ -619,18 +618,11 @@ export function initTelegramBot(token: string): TelegramBot | null {
             paymentAmount: null,
           });
         } else {
-          let rejectionReason = "";
-          if (!isOldEnough) {
-            rejectionReason = `❌ Group is too new!\nMinimum required age: ${minAgeDays} days\nGroup age: ${groupAge} days`;
-          } else if (!hasAcceptableDeletions) {
-            rejectionReason = `❌ Too many deleted messages (${deletedMessages})\nMaximum allowed: 100`;
-          }
-          
           await bot?.sendMessage(chatId,
             `Group Not Approved\n\n` +
             `Group: ${groupInfo.groupName || link}\n` +
             `Type: ${groupType === "used" ? "✓" : "⊘"} ${groupType === "used" ? "Used Group" : "Unused Group"}\n\n` +
-            `${rejectionReason}`
+            `❌ Group is too new!\nMinimum required age: ${minAgeDays} days\nGroup age: ${groupAge} days`
           );
         }
       }
