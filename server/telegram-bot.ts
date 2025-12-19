@@ -169,6 +169,53 @@ export function initTelegramBot(token: string): TelegramBot | null {
       }
     });
 
+    bot.onText(/\/price/, async (msg) => {
+      const chatId = msg.chat.id;
+      
+      try {
+        const priceItems = await storage.getAllPriceItems();
+        
+        if (priceItems.length === 0) {
+          await bot?.sendMessage(chatId, "📋 Price list is currently empty.");
+          return;
+        }
+
+        let priceMessage = "💰 <b>Price List</b>\n\n";
+        
+        for (const item of priceItems) {
+          let statusIcon = "❌";
+          if (item.status === "on") statusIcon = "✅";
+          if (item.status === "not now") statusIcon = "⏳";
+          
+          priceMessage += `${statusIcon} <b>${item.name}</b>\n`;
+          
+          if (item.status === "off") {
+            priceMessage += `Status: Not available\n\n`;
+          } else if (item.status === "not now") {
+            if (item.price) {
+              priceMessage += `Price: ₹${item.price}\n`;
+              priceMessage += `Status: Coming soon\n\n`;
+            } else {
+              priceMessage += `Status: Coming soon\n\n`;
+            }
+          } else {
+            if (item.price) {
+              priceMessage += `Price: ₹${item.price}\n`;
+            }
+            if (item.description) {
+              priceMessage += `Info: ${item.description}\n`;
+            }
+            priceMessage += "\n";
+          }
+        }
+        
+        await bot?.sendMessage(chatId, priceMessage, { parse_mode: "HTML" });
+      } catch (error) {
+        console.error("Error fetching price list:", error);
+        await bot?.sendMessage(chatId, "Error loading price list. Please try again later.");
+      }
+    });
+
     bot.onText(/\/balance/, async (msg) => {
       const chatId = msg.chat.id;
       const userId = msg.from?.id;

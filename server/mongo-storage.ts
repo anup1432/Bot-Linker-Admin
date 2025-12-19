@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 import {
   User, GroupJoin, PricingSettings, Withdrawal, AdminSettings,
-  BotSettings, ActivityLog, Notification, UserSession, YearPricing,
+  BotSettings, ActivityLog, Notification, UserSession, YearPricing, PriceItem,
   IUser, IGroupJoin, IPricingSettings, IWithdrawal, IAdminSettings,
-  IBotSettings, IActivityLog, INotification, IUserSession, IYearPricing
+  IBotSettings, IActivityLog, INotification, IUserSession, IYearPricing, IPriceItem
 } from './models';
 
 export interface UserData {
@@ -140,6 +140,16 @@ export interface YearPricingData {
   priceUsdt: number | null;
   isActive: boolean;
   createdAt: Date;
+}
+
+export interface PriceItemData {
+  id: string;
+  name: string;
+  status: 'on' | 'off' | 'not now';
+  price: number | null;
+  description: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 function toUserData(doc: IUser): UserData {
@@ -295,6 +305,18 @@ function toYearPricingData(doc: IYearPricing): YearPricingData {
     priceUsdt: (doc as any).priceUsdt || null,
     isActive: doc.isActive,
     createdAt: doc.createdAt,
+  };
+}
+
+function toPriceItemData(doc: IPriceItem): PriceItemData {
+  return {
+    id: doc._id.toString(),
+    name: doc.name,
+    status: doc.status,
+    price: doc.price,
+    description: doc.description,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
   };
 }
 
@@ -617,6 +639,31 @@ export class MongoStorage {
   async createYearPricing(data: Partial<YearPricingData>): Promise<YearPricingData> {
     const doc = await YearPricing.create(data);
     return toYearPricingData(doc);
+  }
+
+  async getAllPriceItems(): Promise<PriceItemData[]> {
+    const docs = await PriceItem.find().sort({ createdAt: 1 });
+    return docs.map(toPriceItemData);
+  }
+
+  async getPriceItem(id: string): Promise<PriceItemData | undefined> {
+    const doc = await PriceItem.findById(id);
+    return doc ? toPriceItemData(doc) : undefined;
+  }
+
+  async createPriceItem(data: Partial<PriceItemData>): Promise<PriceItemData> {
+    const doc = await PriceItem.create(data);
+    return toPriceItemData(doc);
+  }
+
+  async updatePriceItem(id: string, updates: Partial<PriceItemData>): Promise<PriceItemData | undefined> {
+    const doc = await PriceItem.findByIdAndUpdate(id, { ...updates, updatedAt: new Date() }, { new: true });
+    return doc ? toPriceItemData(doc) : undefined;
+  }
+
+  async deletePriceItem(id: string): Promise<boolean> {
+    await PriceItem.findByIdAndDelete(id);
+    return true;
   }
 
   async updateYearPricing(id: number, updates: Partial<YearPricingData>): Promise<YearPricingData | undefined> {

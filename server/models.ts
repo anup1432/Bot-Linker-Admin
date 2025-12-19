@@ -136,6 +136,16 @@ export interface IYearPricing extends Document {
   createdAt: Date;
 }
 
+export interface IPriceItem extends Document {
+  _id: mongoose.Types.ObjectId;
+  name: string;
+  status: 'on' | 'off' | 'not now';
+  price: number | null;
+  description: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 const userSchema = new Schema<IUser>({
   telegramId: { type: String, required: true, unique: true },
   username: { type: String, default: null },
@@ -262,6 +272,15 @@ const yearPricingSchema = new Schema<IYearPricing>({
   createdAt: { type: Date, default: Date.now },
 });
 
+const priceItemSchema = new Schema<IPriceItem>({
+  name: { type: String, required: true, unique: true },
+  status: { type: String, enum: ['on', 'off', 'not now'], default: 'on' },
+  price: { type: Number, default: null },
+  description: { type: String, default: null },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+
 export const User = mongoose.model<IUser>('User', userSchema);
 export const GroupJoin = mongoose.model<IGroupJoin>('GroupJoin', groupJoinSchema);
 export const PricingSettings = mongoose.model<IPricingSettings>('PricingSettings', pricingSettingsSchema);
@@ -272,3 +291,4 @@ export const ActivityLog = mongoose.model<IActivityLog>('ActivityLog', activityL
 export const Notification = mongoose.model<INotification>('Notification', notificationSchema);
 export const UserSession = mongoose.model<IUserSession>('UserSession', userSessionSchema);
 export const YearPricing = mongoose.model<IYearPricing>('YearPricing', yearPricingSchema);
+export const PriceItem = mongoose.model<IPriceItem>('PriceItem', priceItemSchema);

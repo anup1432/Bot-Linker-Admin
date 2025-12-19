@@ -862,5 +862,43 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/price", async (req, res) => {
+    try {
+      const items = await storage.getAllPriceItems();
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get price list" });
+    }
+  });
+
+  app.post("/api/admin/price", requireAdmin, async (req, res) => {
+    try {
+      const { name, status, price, description } = req.body;
+      const item = await storage.createPriceItem({ name, status, price, description });
+      res.json(item);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create price item" });
+    }
+  });
+
+  app.patch("/api/admin/price/:id", requireAdmin, async (req, res) => {
+    try {
+      const { name, status, price, description } = req.body;
+      const item = await storage.updatePriceItem(req.params.id, { name, status, price, description });
+      res.json(item);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update price item" });
+    }
+  });
+
+  app.delete("/api/admin/price/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.deletePriceItem(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete price item" });
+    }
+  });
+
   return httpServer;
 }
