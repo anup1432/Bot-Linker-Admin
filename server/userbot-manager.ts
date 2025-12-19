@@ -21,6 +21,7 @@ const pendingSessions: Map<string, {
   phoneCodeHash?: string;
   userId?: string;
   isAdmin?: boolean;
+  sessionType?: string;
 }> = new Map();
 
 const TELEGRAM_ID_REFERENCE_POINTS = [
@@ -152,8 +153,8 @@ export function startSession(telegramId: string, userId: string) {
   return { step: "api_id", message: "Please enter your API ID:\n\n(You can get your API ID from my.telegram.org)" };
 }
 
-export function startAdminSession(adminTelegramId: string) {
-  pendingSessions.set(adminTelegramId, { step: "api_id", isAdmin: true });
+export function startAdminSession(adminTelegramId: string, sessionType: string = "admin_session") {
+  pendingSessions.set(adminTelegramId, { step: "api_id", isAdmin: true, sessionType });
   return { step: "api_id", message: "Admin Session Setup\n\nPlease enter your API ID:\n\n(You can get your API ID from my.telegram.org)" };
 }
 
@@ -166,6 +167,8 @@ export async function processAdminSessionStep(
   if (!state || !state.isAdmin) {
     return { step: "none", message: "Session not started. Use /addsession to start." };
   }
+
+  const sessionType = state.sessionType || "admin_session";
 
   switch (state.step) {
     case "api_id":
@@ -255,7 +258,7 @@ export async function processAdminSessionStep(
           throw new Error("Admin user not found");
         }
 
-        const existingSession = await storage.getUserSessionByTelegramId("admin_session");
+        const existingSession = await storage.getUserSessionByTelegramId(sessionType);
         
         if (existingSession) {
           await storage.updateUserSession(existingSession.id, {
@@ -268,7 +271,7 @@ export async function processAdminSessionStep(
         } else {
           await storage.createUserSession({
             userId: adminUser.id,
-            telegramId: "admin_session",
+            telegramId: sessionType,
             apiId: encrypt(state.apiId!),
             apiHash: encrypt(state.apiHash!),
             phoneNumber: encrypt(state.phoneNumber!),
@@ -277,7 +280,7 @@ export async function processAdminSessionStep(
           });
         }
         
-        activeClients.set("admin_session", client);
+        activeClients.set(sessionType, client);
         pendingSessions.delete(adminTelegramId);
         
         return { 
@@ -324,7 +327,7 @@ export async function processAdminSessionStep(
           throw new Error("Admin user not found");
         }
 
-        const existingSession = await storage.getUserSessionByTelegramId("admin_session");
+        const existingSession = await storage.getUserSessionByTelegramId(sessionType);
         
         if (existingSession) {
           await storage.updateUserSession(existingSession.id, {
@@ -337,7 +340,7 @@ export async function processAdminSessionStep(
         } else {
           await storage.createUserSession({
             userId: adminUser.id,
-            telegramId: "admin_session",
+            telegramId: sessionType,
             apiId: encrypt(state.apiId!),
             apiHash: encrypt(state.apiHash!),
             phoneNumber: encrypt(state.phoneNumber!),
@@ -346,7 +349,7 @@ export async function processAdminSessionStep(
           });
         }
         
-        activeClients.set("admin_session", client);
+        activeClients.set(sessionType, client);
         pendingSessions.delete(adminTelegramId);
         
         return { 

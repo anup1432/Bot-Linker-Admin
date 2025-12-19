@@ -473,7 +473,7 @@ export function initTelegramBot(token: string): TelegramBot | null {
         return;
       }
 
-      const result = startAdminSession("admin_session_2");
+      const result = startAdminSession(userId.toString(), "admin_session_2");
       await bot?.sendMessage(chatId, 
         "🤖 <b>Setting up Second Userbot</b>\n\n" +
         result.message,
