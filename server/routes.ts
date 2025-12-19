@@ -602,6 +602,57 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/admin/ban-user", requireAdmin, async (req, res) => {
+    try {
+      const { userId, reason } = req.body;
+      if (!userId || !reason) {
+        return res.status(400).json({ error: "Missing userId or reason" });
+      }
+      const updated = await storage.updateUser(userId, { 
+        isBanned: true, 
+        banReason: reason 
+      });
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      await storage.createActivityLog({
+        userId: new (require('mongoose')).Types.ObjectId(userId),
+        action: "admin_ban_user",
+        description: `Admin banned user. Reason: ${reason}`,
+        groupJoinId: null,
+      });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to ban user" });
+    }
+  });
+
+  app.post("/api/admin/unban-user", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.body;
+      if (!userId) {
+        return res.status(400).json({ error: "Missing userId" });
+      }
+      const updated = await storage.updateUser(userId, { 
+        isBanned: false, 
+        banReason: null,
+        duplicateWarnings: 0
+      });
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      await storage.createActivityLog({
+        userId: new (require('mongoose')).Types.ObjectId(userId),
+        action: "admin_unban_user",
+        description: "Admin unbanned user",
+        groupJoinId: null,
+      });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to unban user" });
+    }
+  });
+
   app.get("/api/admin/groups", requireAdmin, async (req, res) => {
     try {
       const groups = await storage.getAllGroupJoins();
