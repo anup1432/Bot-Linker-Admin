@@ -446,6 +446,114 @@ export function initTelegramBot(token: string): TelegramBot | null {
       );
     });
 
+    bot.onText(/\/addsession2/, async (msg) => {
+      const chatId = msg.chat.id;
+      const userId = msg.from?.id;
+      
+      if (!userId) return;
+
+      const user = await storage.getUserByTelegramId(userId.toString());
+      
+      if (!user) {
+        await bot?.sendMessage(chatId, "Please /start the bot first.");
+        return;
+      }
+
+      if (!user.isAdmin) {
+        await bot?.sendMessage(chatId, "This command is only available for admins.");
+        return;
+      }
+
+      const existingSession = await storage.getUserSessionByTelegramId("admin_session_2");
+      if (existingSession?.isActive) {
+        await bot?.sendMessage(chatId,
+          "🤖 Second userbot session already exists and is active.\n\n" +
+          "Send /removesession2 to remove the current session."
+        );
+        return;
+      }
+
+      const result = startAdminSession("admin_session_2");
+      await bot?.sendMessage(chatId, 
+        "🤖 <b>Setting up Second Userbot</b>\n\n" +
+        result.message,
+        { parse_mode: "HTML" }
+      );
+    });
+
+    bot.onText(/\/removesession2/, async (msg) => {
+      const chatId = msg.chat.id;
+      const userId = msg.from?.id;
+      
+      if (!userId) return;
+
+      const user = await storage.getUserByTelegramId(userId.toString());
+      
+      if (!user || !user.isAdmin) {
+        await bot?.sendMessage(chatId, "This command is only available for admins.");
+        return;
+      }
+
+      cancelSession("admin_session_2");
+      
+      const session = await storage.getUserSessionByTelegramId("admin_session_2");
+      if (session) {
+        await storage.updateUserSession(session.id, { isActive: false });
+      }
+
+      await bot?.sendMessage(chatId,
+        "🤖 Second userbot session has been removed.\n\n" +
+        "Use /addsession2 to add a new second userbot session."
+      );
+    });
+
+    bot.onText(/\/sessions/, async (msg) => {
+      const chatId = msg.chat.id;
+      const userId = msg.from?.id;
+      
+      if (!userId) return;
+
+      const user = await storage.getUserByTelegramId(userId.toString());
+      
+      if (!user || !user.isAdmin) {
+        await bot?.sendMessage(chatId, "This command is only available for admins.");
+        return;
+      }
+
+      const session1 = await storage.getUserSessionByTelegramId("admin_session");
+      const session2 = await storage.getUserSessionByTelegramId("admin_session_2");
+
+      let message = "🤖 <b>Active Userbots</b>\n\n";
+      
+      message += "1️⃣ <b>Primary Userbot (A)</b>\n";
+      if (session1?.isActive) {
+        message += "✅ Active\n";
+        message += `Phone: ${session1.phoneNumber || "Not set"}\n`;
+        message += `Telegram ID: ${session1.telegramId}\n`;
+      } else {
+        message += "❌ Not configured\n";
+        message += "Use /addsession to add\n";
+      }
+      
+      message += "\n2️⃣ <b>Secondary Userbot (Verification)</b>\n";
+      if (session2?.isActive) {
+        message += "✅ Active\n";
+        message += `Phone: ${session2.phoneNumber || "Not set"}\n`;
+        message += `Telegram ID: ${session2.telegramId}\n`;
+      } else {
+        message += "❌ Not configured\n";
+        message += "Use /addsession2 to add\n";
+      }
+
+      message += "\n<b>How it works:</b>\n";
+      message += "1. Primary bot joins group & sends 'A' message\n";
+      message += "2. Secondary bot verifies group (used/unused)\n";
+      message += "3. If verified, admin transfers ownership\n";
+      message += "4. Payment added to balance\n";
+
+      await bot?.sendMessage(chatId, message, { parse_mode: "HTML" });
+    });
+
     bot.onText(/\/cancel/, async (msg) => {
       const chatId = msg.chat.id;
       const userId = msg.from?.id;
