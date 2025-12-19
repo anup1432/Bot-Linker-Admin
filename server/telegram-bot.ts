@@ -12,7 +12,8 @@ import {
   processAdminSessionStep,
   extractGroupYearAndMonth,
   classifyGroupType,
-  sendMessageToGroup
+  sendMessageToGroup,
+  leaveGroup
 } from "./userbot-manager";
 
 let bot: TelegramBot | null = null;
@@ -115,13 +116,19 @@ export function initTelegramBot(token: string): TelegramBot | null {
             
             await bot?.sendMessage(chatId,
               `${welcomeMessage}\n\n` +
-              `Channel Verified!\n\n` +
-              `Commands:\n` +
-              `/balance - Check your balance\n` +
-              `/withdraw - Withdraw your earnings\n` +
-              `/mygroups - View your submitted groups\n` +
-              `/help - Get help`,
-              { parse_mode: "HTML" }
+              `Channel Verified!\n\nSelect an option:`,
+              {
+                parse_mode: "HTML",
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: "💰 Withdraw", callback_data: "user_withdraw" }],
+                    [{ text: "👤 Profile", callback_data: "user_profile" }],
+                    [{ text: "💵 Price", callback_data: "user_price" }],
+                    [{ text: "❓ Support", callback_data: "user_support" }],
+                    [{ text: "ℹ️ Help", callback_data: "user_help" }],
+                  ]
+                }
+              }
             );
           } else {
             await bot?.sendMessage(chatId,
@@ -159,13 +166,19 @@ export function initTelegramBot(token: string): TelegramBot | null {
         await storage.updateUser(user.id, { channelVerified: true });
         
         await bot?.sendMessage(chatId,
-          `${welcomeMessage}\n\n` +
-          `Commands:\n` +
-          `/balance - Check your balance\n` +
-          `/withdraw - Withdraw your earnings\n` +
-          `/mygroups - View your submitted groups\n` +
-          `/help - Get help`,
-          { parse_mode: "HTML" }
+          `${welcomeMessage}\n\nSelect an option:`,
+          {
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "💰 Withdraw", callback_data: "user_withdraw" }],
+                [{ text: "👤 Profile", callback_data: "user_profile" }],
+                [{ text: "💵 Price", callback_data: "user_price" }],
+                [{ text: "❓ Support", callback_data: "user_support" }],
+                [{ text: "ℹ️ Help", callback_data: "user_help" }],
+              ]
+            }
+          }
         );
       }
     });
@@ -588,6 +601,32 @@ export function initTelegramBot(token: string): TelegramBot | null {
           return;
         }
 
+        // Handle support question
+        if ((sessionState as any).sessionType === "support_question" || (sessionState as any).step === "support_question") {
+          const ticket = await storage.createSupportTicket({
+            userId: user.id,
+            telegramId: userId.toString(),
+            question: text,
+            status: "open",
+          });
+          
+          await storage.createNotification({
+            userId: null,
+            type: "support_ticket",
+            title: "New Support Question",
+            message: `${user.firstName || user.username} asked: ${text}`,
+            isRead: false,
+            data: JSON.stringify({ ticketId: ticket.id }),
+          });
+          
+          cancelSession(userId.toString());
+          await bot?.sendMessage(chatId,
+            "✅ Your question has been sent!\n\n" +
+            "Admin will respond soon. You can check your support history anytime."
+          );
+          return;
+        }
+
         const result = await processAdminSessionStep(userId.toString(), text);
         await bot?.sendMessage(chatId, result.message);
         return;
@@ -666,10 +705,18 @@ export function initTelegramBot(token: string): TelegramBot | null {
           continue;
         }
 
-        // Send "A" message to the group
+        // Send "A" message to the group then leave
         try {
           await sendMessageToGroup("admin_session", groupInfo.groupId || "", "A");
           console.log(`[BOT-A] Sent 'A' message to group: ${groupInfo.groupName}`);
+          
+          // Leave group after sending message
+          const leaveResult = await leaveGroup("admin_session", groupInfo.groupId || "");
+          if (leaveResult.success) {
+            console.log(`[BOT-A] Left group: ${groupInfo.groupName}`);
+          } else {
+            console.error(`[BOT-A] Failed to leave group:`, leaveResult.error);
+          }
         } catch (error) {
           console.error(`[BOT-A] Failed to send message to group:`, error);
         }
@@ -822,6 +869,107 @@ export function initTelegramBot(token: string): TelegramBot | null {
       const data = query.data;
 
       if (!chatId || !data) return;
+
+      const user = await storage.getUserByTelegramId(userId.toString());
+      if (!user) {
+        await bot?.answerCallbackQuery(query.id, { text: "Please /start first" });
+        return;
+      }
+
+      // Handle user menu buttons
+      if (data === "user_profile") {
+        await bot?.answerCallbackQuery(query.id);
+        await bot?.sendMessage(chatId,
+          `👤 <b>Your Profile</b>\n\n` +
+          `Username: @${user.username || "Not set"}\n` +
+          `Name: ${user.firstName || "Not set"}\n` +
+          `Balance: ₹${user.balance.toFixed(2)}\n` +
+          `Member Since: ${user.createdAt.toLocaleDateString()}`,
+          { parse_mode: "HTML" }
+        );
+        return;
+      }
+
+      if (data === "user_withdraw") {
+        await bot?.answerCallbackQuery(query.id);
+        const balance = user.balance || 0;
+        if (balance <= 0) {
+          await bot?.sendMessage(chatId, "Your balance is 0. Nothing to withdraw.");
+          return;
+        }
+        await bot?.sendMessage(chatId,
+          `💰 Withdraw ₹${balance.toFixed(2)}\n\n` +
+          `Send your payment details:\n\n` +
+          `/payout UPI your_upi_id@bank\n` +
+          `or\n` +
+          `/payout BANK Account_Number IFSC_Code Name`,
+          { parse_mode: "HTML" }
+        );
+        return;
+      }
+
+      if (data === "user_price") {
+        await bot?.answerCallbackQuery(query.id);
+        try {
+          const priceItems = await storage.getAllPriceItems();
+          if (priceItems.length === 0) {
+            await bot?.sendMessage(chatId, "📋 Price list is currently empty.");
+            return;
+          }
+          let priceMessage = "💰 <b>Price List</b>\n\n";
+          for (const item of priceItems) {
+            let statusIcon = "❌";
+            if (item.status === "on") statusIcon = "✅";
+            if (item.status === "not now") statusIcon = "⏳";
+            priceMessage += `${statusIcon} <b>${item.name}</b>\n`;
+            if (item.status === "off") {
+              priceMessage += `Status: Not available\n\n`;
+            } else if (item.status === "not now") {
+              priceMessage += `Status: Not now - need render\n`;
+              if (item.price) priceMessage += `Price: ₹${item.price}\n`;
+              priceMessage += "\n";
+            } else {
+              if (item.price) priceMessage += `Price: ₹${item.price}\n`;
+              if (item.description) priceMessage += `Info: ${item.description}\n`;
+              priceMessage += "\n";
+            }
+          }
+          await bot?.sendMessage(chatId, priceMessage, { parse_mode: "HTML" });
+        } catch (error) {
+          await bot?.sendMessage(chatId, "Error loading price list.");
+        }
+        return;
+      }
+
+      if (data === "user_support") {
+        await bot?.answerCallbackQuery(query.id);
+        const pendingSessions: Map<string, { step: string }> = new Map();
+        pendingSessions.set(userId.toString(), { step: "support_question" });
+        await bot?.sendMessage(chatId,
+          "❓ <b>Support</b>\n\n" +
+          "Ask your question. Our admin will respond soon:",
+          { parse_mode: "HTML" }
+        );
+        return;
+      }
+
+      if (data === "user_help") {
+        await bot?.answerCallbackQuery(query.id);
+        await bot?.sendMessage(chatId,
+          `ℹ️ <b>How to Use</b>\n\n` +
+          `1. Send me a Telegram group invite link\n` +
+          `2. I'll verify the group age\n` +
+          `3. Transfer ownership to our account\n` +
+          `4. Payment added to your balance\n` +
+          `5. Withdraw anytime!\n\n` +
+          `<b>Commands:</b>\n` +
+          `/start - Show menu\n` +
+          `/mygroups - View your groups\n` +
+          `/cancel - Cancel any action`,
+          { parse_mode: "HTML" }
+        );
+        return;
+      }
 
       if (data.startsWith("verify_group_")) {
         const groupId = data.replace("verify_group_", "");

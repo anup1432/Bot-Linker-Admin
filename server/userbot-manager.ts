@@ -848,6 +848,30 @@ export async function checkOwnership(
   }
 }
 
+export async function leaveGroup(
+  telegramId: string,
+  groupId: string
+): Promise<{ success: boolean; error?: string }> {
+  const client = await getActiveClient(telegramId);
+  
+  if (!client) {
+    return { success: false, error: "No active session." };
+  }
+  
+  try {
+    await client.invoke(
+      new Api.channels.LeaveChannel({
+        channel: groupId,
+      })
+    );
+    console.log(`Successfully left group: ${groupId}`);
+    return { success: true };
+  } catch (error: any) {
+    console.error(`Error leaving group ${groupId}:`, error);
+    return { success: false, error: error.message };
+  }
+}
+
 export async function disconnectClient(telegramId: string) {
   const client = activeClients.get(telegramId);
   if (client) {

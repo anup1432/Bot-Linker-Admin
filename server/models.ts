@@ -146,6 +146,17 @@ export interface IPriceItem extends Document {
   updatedAt: Date;
 }
 
+export interface ISupportTicket extends Document {
+  _id: mongoose.Types.ObjectId;
+  userId: mongoose.Types.ObjectId;
+  telegramId: string;
+  question: string;
+  answer: string | null;
+  status: 'open' | 'answered';
+  createdAt: Date;
+  answeredAt: Date | null;
+}
+
 const userSchema = new Schema<IUser>({
   telegramId: { type: String, required: true, unique: true },
   username: { type: String, default: null },
@@ -281,6 +292,16 @@ const priceItemSchema = new Schema<IPriceItem>({
   updatedAt: { type: Date, default: Date.now },
 });
 
+const supportTicketSchema = new Schema<ISupportTicket>({
+  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  telegramId: { type: String, required: true },
+  question: { type: String, required: true },
+  answer: { type: String, default: null },
+  status: { type: String, enum: ['open', 'answered'], default: 'open' },
+  createdAt: { type: Date, default: Date.now },
+  answeredAt: { type: Date, default: null },
+});
+
 export const User = mongoose.model<IUser>('User', userSchema);
 export const GroupJoin = mongoose.model<IGroupJoin>('GroupJoin', groupJoinSchema);
 export const PricingSettings = mongoose.model<IPricingSettings>('PricingSettings', pricingSettingsSchema);
@@ -292,3 +313,4 @@ export const Notification = mongoose.model<INotification>('Notification', notifi
 export const UserSession = mongoose.model<IUserSession>('UserSession', userSessionSchema);
 export const YearPricing = mongoose.model<IYearPricing>('YearPricing', yearPricingSchema);
 export const PriceItem = mongoose.model<IPriceItem>('PriceItem', priceItemSchema);
+export const SupportTicket = mongoose.model<ISupportTicket>('SupportTicket', supportTicketSchema);

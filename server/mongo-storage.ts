@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 import {
   User, GroupJoin, PricingSettings, Withdrawal, AdminSettings,
-  BotSettings, ActivityLog, Notification, UserSession, YearPricing, PriceItem,
+  BotSettings, ActivityLog, Notification, UserSession, YearPricing, PriceItem, SupportTicket,
   IUser, IGroupJoin, IPricingSettings, IWithdrawal, IAdminSettings,
-  IBotSettings, IActivityLog, INotification, IUserSession, IYearPricing, IPriceItem
+  IBotSettings, IActivityLog, INotification, IUserSession, IYearPricing, IPriceItem, ISupportTicket
 } from './models';
 
 export interface UserData {
@@ -150,6 +150,17 @@ export interface PriceItemData {
   description: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface SupportTicketData {
+  id: string;
+  userId: string;
+  telegramId: string;
+  question: string;
+  answer: string | null;
+  status: 'open' | 'answered';
+  createdAt: Date;
+  answeredAt: Date | null;
 }
 
 function toUserData(doc: IUser): UserData {
@@ -317,6 +328,19 @@ function toPriceItemData(doc: IPriceItem): PriceItemData {
     description: doc.description,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
+  };
+}
+
+function toSupportTicketData(doc: ISupportTicket): SupportTicketData {
+  return {
+    id: doc._id.toString(),
+    userId: doc.userId.toString(),
+    telegramId: doc.telegramId,
+    question: doc.question,
+    answer: doc.answer,
+    status: doc.status,
+    createdAt: doc.createdAt,
+    answeredAt: doc.answeredAt,
   };
 }
 
@@ -688,6 +712,26 @@ export class MongoStorage {
       }
     }
     return false;
+  }
+
+  async createSupportTicket(data: Partial<SupportTicketData>): Promise<SupportTicketData> {
+    const doc = await SupportTicket.create(data);
+    return toSupportTicketData(doc);
+  }
+
+  async getSupportTickets(userId: string): Promise<SupportTicketData[]> {
+    const docs = await SupportTicket.find({ userId: new mongoose.Types.ObjectId(userId) }).sort({ createdAt: -1 });
+    return docs.map(toSupportTicketData);
+  }
+
+  async getAllOpenSupportTickets(): Promise<SupportTicketData[]> {
+    const docs = await SupportTicket.find({ status: 'open' }).sort({ createdAt: -1 });
+    return docs.map(toSupportTicketData);
+  }
+
+  async updateSupportTicket(id: string, updates: Partial<SupportTicketData>): Promise<SupportTicketData | undefined> {
+    const doc = await SupportTicket.findByIdAndUpdate(id, updates, { new: true });
+    return doc ? toSupportTicketData(doc) : undefined;
   }
 }
 
