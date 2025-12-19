@@ -73,6 +73,9 @@ export interface IAdminSettings extends Document {
   twilioPhoneNumber: string | null;
   otpEnabled: boolean;
   twoStepEnabled: boolean;
+  inrEnabled: boolean;
+  usdtEnabled: boolean;
+  usdtAddress: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -128,6 +131,7 @@ export interface IYearPricing extends Document {
   month: number | null;
   category: 'used' | 'unused';
   pricePerGroup: number;
+  priceUsdt: number | null;
   isActive: boolean;
   createdAt: Date;
 }
@@ -200,6 +204,9 @@ const adminSettingsSchema = new Schema<IAdminSettings>({
   twilioPhoneNumber: { type: String, default: null },
   otpEnabled: { type: Boolean, default: false },
   twoStepEnabled: { type: Boolean, default: false },
+  inrEnabled: { type: Boolean, default: true },
+  usdtEnabled: { type: Boolean, default: true },
+  usdtAddress: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
@@ -250,6 +257,7 @@ const yearPricingSchema = new Schema<IYearPricing>({
   month: { type: Number, default: null },
   category: { type: String, enum: ['used', 'unused'], required: true },
   pricePerGroup: { type: Number, required: true },
+  priceUsdt: { type: Number, default: null },
   isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now },
 });

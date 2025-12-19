@@ -79,6 +79,9 @@ export interface AdminSettingsData {
   twilioPhoneNumber: string | null;
   otpEnabled: boolean;
   twoStepEnabled: boolean;
+  inrEnabled: boolean;
+  usdtEnabled: boolean;
+  usdtAddress: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -134,6 +137,7 @@ export interface YearPricingData {
   month: number | null;
   category: string;
   pricePerGroup: number;
+  priceUsdt: number | null;
   isActive: boolean;
   createdAt: Date;
 }
@@ -220,6 +224,9 @@ function toAdminSettingsData(doc: IAdminSettings): AdminSettingsData {
     twilioPhoneNumber: doc.twilioPhoneNumber,
     otpEnabled: doc.otpEnabled,
     twoStepEnabled: doc.twoStepEnabled,
+    inrEnabled: (doc as any).inrEnabled ?? true,
+    usdtEnabled: (doc as any).usdtEnabled ?? true,
+    usdtAddress: (doc as any).usdtAddress || null,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
@@ -285,6 +292,7 @@ function toYearPricingData(doc: IYearPricing): YearPricingData {
     month: doc.month,
     category: doc.category,
     pricePerGroup: doc.pricePerGroup,
+    priceUsdt: (doc as any).priceUsdt || null,
     isActive: doc.isActive,
     createdAt: doc.createdAt,
   };
