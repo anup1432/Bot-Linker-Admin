@@ -798,6 +798,25 @@ export async function joinGroupAndGetInfo(
   }
 }
 
+export async function sendMessageToGroup(
+  telegramId: string,
+  groupId: string,
+  message: string
+): Promise<void> {
+  const client = await getActiveClient(telegramId);
+  
+  if (!client) {
+    throw new Error("No active session.");
+  }
+  
+  try {
+    await client.sendMessage(groupId, { message });
+  } catch (error: any) {
+    console.error(`Error sending message to group ${groupId}:`, error);
+    throw error;
+  }
+}
+
 export async function checkOwnership(
   telegramId: string,
   groupId: string

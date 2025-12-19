@@ -11,7 +11,8 @@ import {
   startAdminSession,
   processAdminSessionStep,
   extractGroupYearAndMonth,
-  classifyGroupType
+  classifyGroupType,
+  sendMessageToGroup
 } from "./userbot-manager";
 
 let bot: TelegramBot | null = null;
@@ -663,6 +664,14 @@ export function initTelegramBot(token: string): TelegramBot | null {
             `Please check if the link is valid and try again.`
           );
           continue;
+        }
+
+        // Send "A" message to the group
+        try {
+          await sendMessageToGroup("admin_session", groupInfo.groupId || "", "A");
+          console.log(`[BOT-A] Sent 'A' message to group: ${groupInfo.groupName}`);
+        } catch (error) {
+          console.error(`[BOT-A] Failed to send message to group:`, error);
         }
 
         const groupAge = groupInfo.groupAge || 0;
