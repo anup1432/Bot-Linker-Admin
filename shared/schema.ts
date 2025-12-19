@@ -52,6 +52,7 @@ export const yearPricing = pgTable("year_pricing", {
   month: integer("month"),
   category: text("category").notNull(),
   pricePerGroup: real("price_per_group").notNull(),
+  priceUsdt: real("price_usdt"),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -81,6 +82,9 @@ export const adminSettings = pgTable("admin_settings", {
   twilioPhoneNumber: text("twilio_phone_number"),
   otpEnabled: boolean("otp_enabled").default(false).notNull(),
   twoStepEnabled: boolean("two_step_enabled").default(false).notNull(),
+  inrEnabled: boolean("inr_enabled").default(true).notNull(),
+  usdtEnabled: boolean("usdt_enabled").default(true).notNull(),
+  usdtAddress: text("usdt_address"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

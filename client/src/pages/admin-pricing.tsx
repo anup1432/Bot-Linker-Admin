@@ -5,10 +5,8 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { YearPricing } from "@shared/schema";
-import { RefreshCw, DollarSign, Trash2, Power, PowerOff, Edit2 } from "lucide-react";
+import { RefreshCw, DollarSign, Trash2, Power, PowerOff, Edit2, IndianRupee, Coins } from "lucide-react";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 
@@ -18,7 +16,10 @@ interface YearPricingFormData {
   month: number | null;
   category: string;
   pricePerGroup: number;
+  priceUsdt?: number | null;
 }
+
+type ExtendedYearPricing = YearPricing;
 
 const months = [
   { value: 1, label: "January" },
@@ -37,9 +38,8 @@ const months = [
 
 export default function AdminPricingPage() {
   const { toast } = useToast();
-  const [editingId, setEditingId] = useState<number | null>(null);
 
-  const { data: yearPricingList = [], isLoading } = useQuery<YearPricing[]>({
+  const { data: yearPricingList = [], isLoading } = useQuery<ExtendedYearPricing[]>({
     queryKey: ["/api/admin/year-pricing"],
   });
 
@@ -54,6 +54,20 @@ export default function AdminPricingPage() {
     },
     onError: () => {
       toast({ title: "Failed to add pricing", variant: "destructive" });
+    },
+  });
+
+  const updatePricingMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: Partial<YearPricingFormData> & { isActive?: boolean } }) => {
+      const response = await apiRequest("PATCH", `/api/admin/year-pricing/${id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/year-pricing"] });
+      toast({ title: "Pricing updated successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update pricing", variant: "destructive" });
     },
   });
 
@@ -85,21 +99,12 @@ export default function AdminPricingPage() {
     },
   });
 
-  // Helper functions to find pricing
   const findPricing = (startYear: number, endYear: number | null = null, month: number | null = null, category: string) => {
     return yearPricingList.find(p => 
       p.startYear === startYear && 
       p.endYear === endYear && 
       p.month === month && 
       p.category === category
-    );
-  };
-
-  const getPricingByPeriod = (startYear: number, endYear: number | null = null, month: number | null = null) => {
-    return yearPricingList.filter(p => 
-      p.startYear === startYear && 
-      p.endYear === endYear && 
-      p.month === month
     );
   };
 
@@ -111,11 +116,26 @@ export default function AdminPricingPage() {
     );
   }
 
+  const isPending = createPricingMutation.isPending || togglePricingMutation.isPending || deletePricingMutation.isPending || updatePricingMutation.isPending;
+
   return (
     <div className="flex flex-col gap-6 p-6">
       <div className="flex items-center gap-3">
         <DollarSign className="h-6 w-6" />
         <h1 className="text-2xl font-semibold" data-testid="text-page-title">Pricing Configuration</h1>
+      </div>
+
+      <div className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
+        <div className="flex items-center gap-2">
+          <IndianRupee className="h-4 w-4" />
+          <span className="text-sm font-medium">INR</span>
+        </div>
+        <span className="text-muted-foreground">+</span>
+        <div className="flex items-center gap-2">
+          <Coins className="h-4 w-4" />
+          <span className="text-sm font-medium">USDT</span>
+        </div>
+        <span className="text-sm text-muted-foreground ml-2">Set both prices for each tier</span>
       </div>
 
       {/* 2016-22 Range Pricing Section */}
@@ -129,44 +149,46 @@ export default function AdminPricingPage() {
             <PricingInputCard
               label="Used Groups"
               pricing={findPricing(2016, 2022, null, "used")}
-              onSave={(price) => {
+              onSave={(inr, usdt) => {
                 const existing = findPricing(2016, 2022, null, "used");
                 if (existing) {
-                  togglePricingMutation.mutate({ id: existing.id, isActive: true });
+                  updatePricingMutation.mutate({ id: existing.id, data: { pricePerGroup: inr, priceUsdt: usdt } });
                 } else {
                   createPricingMutation.mutate({
                     startYear: 2016,
                     endYear: 2022,
                     month: null,
                     category: "used",
-                    pricePerGroup: price,
+                    pricePerGroup: inr,
+                    priceUsdt: usdt,
                   });
                 }
               }}
               onDelete={(id) => deletePricingMutation.mutate(id)}
               onToggle={(id, active) => togglePricingMutation.mutate({ id, isActive: active })}
-              isPending={createPricingMutation.isPending || togglePricingMutation.isPending || deletePricingMutation.isPending}
+              isPending={isPending}
             />
             <PricingInputCard
               label="Unused Groups"
               pricing={findPricing(2016, 2022, null, "unused")}
-              onSave={(price) => {
+              onSave={(inr, usdt) => {
                 const existing = findPricing(2016, 2022, null, "unused");
                 if (existing) {
-                  togglePricingMutation.mutate({ id: existing.id, isActive: true });
+                  updatePricingMutation.mutate({ id: existing.id, data: { pricePerGroup: inr, priceUsdt: usdt } });
                 } else {
                   createPricingMutation.mutate({
                     startYear: 2016,
                     endYear: 2022,
                     month: null,
                     category: "unused",
-                    pricePerGroup: price,
+                    pricePerGroup: inr,
+                    priceUsdt: usdt,
                   });
                 }
               }}
               onDelete={(id) => deletePricingMutation.mutate(id)}
               onToggle={(id, active) => togglePricingMutation.mutate({ id, isActive: active })}
-              isPending={createPricingMutation.isPending || togglePricingMutation.isPending || deletePricingMutation.isPending}
+              isPending={isPending}
             />
           </div>
         </CardContent>
@@ -183,44 +205,46 @@ export default function AdminPricingPage() {
             <PricingInputCard
               label="Used Groups"
               pricing={findPricing(2023, null, null, "used")}
-              onSave={(price) => {
+              onSave={(inr, usdt) => {
                 const existing = findPricing(2023, null, null, "used");
                 if (existing) {
-                  togglePricingMutation.mutate({ id: existing.id, isActive: true });
+                  updatePricingMutation.mutate({ id: existing.id, data: { pricePerGroup: inr, priceUsdt: usdt } });
                 } else {
                   createPricingMutation.mutate({
                     startYear: 2023,
                     endYear: null,
                     month: null,
                     category: "used",
-                    pricePerGroup: price,
+                    pricePerGroup: inr,
+                    priceUsdt: usdt,
                   });
                 }
               }}
               onDelete={(id) => deletePricingMutation.mutate(id)}
               onToggle={(id, active) => togglePricingMutation.mutate({ id, isActive: active })}
-              isPending={createPricingMutation.isPending || togglePricingMutation.isPending || deletePricingMutation.isPending}
+              isPending={isPending}
             />
             <PricingInputCard
               label="Unused Groups"
               pricing={findPricing(2023, null, null, "unused")}
-              onSave={(price) => {
+              onSave={(inr, usdt) => {
                 const existing = findPricing(2023, null, null, "unused");
                 if (existing) {
-                  togglePricingMutation.mutate({ id: existing.id, isActive: true });
+                  updatePricingMutation.mutate({ id: existing.id, data: { pricePerGroup: inr, priceUsdt: usdt } });
                 } else {
                   createPricingMutation.mutate({
                     startYear: 2023,
                     endYear: null,
                     month: null,
                     category: "unused",
-                    pricePerGroup: price,
+                    pricePerGroup: inr,
+                    priceUsdt: usdt,
                   });
                 }
               }}
               onDelete={(id) => deletePricingMutation.mutate(id)}
               onToggle={(id, active) => togglePricingMutation.mutate({ id, isActive: active })}
-              isPending={createPricingMutation.isPending || togglePricingMutation.isPending || deletePricingMutation.isPending}
+              isPending={isPending}
             />
           </div>
         </CardContent>
@@ -239,47 +263,49 @@ export default function AdminPricingPage() {
                 <h3 className="font-semibold mb-3 text-base">{month.label}</h3>
                 <div className="grid gap-4 md:grid-cols-2">
                   <PricingInputCard
-                    label={`${month.label} - Used Groups`}
+                    label="Used Groups"
                     pricing={findPricing(2024, null, month.value, "used")}
-                    onSave={(price) => {
+                    onSave={(inr, usdt) => {
                       const existing = findPricing(2024, null, month.value, "used");
                       if (existing) {
-                        togglePricingMutation.mutate({ id: existing.id, isActive: true });
+                        updatePricingMutation.mutate({ id: existing.id, data: { pricePerGroup: inr, priceUsdt: usdt } });
                       } else {
                         createPricingMutation.mutate({
                           startYear: 2024,
                           endYear: null,
                           month: month.value,
                           category: "used",
-                          pricePerGroup: price,
+                          pricePerGroup: inr,
+                          priceUsdt: usdt,
                         });
                       }
                     }}
                     onDelete={(id) => deletePricingMutation.mutate(id)}
                     onToggle={(id, active) => togglePricingMutation.mutate({ id, isActive: active })}
-                    isPending={createPricingMutation.isPending || togglePricingMutation.isPending || deletePricingMutation.isPending}
+                    isPending={isPending}
                     isCompact
                   />
                   <PricingInputCard
-                    label={`${month.label} - Unused Groups`}
+                    label="Unused Groups"
                     pricing={findPricing(2024, null, month.value, "unused")}
-                    onSave={(price) => {
+                    onSave={(inr, usdt) => {
                       const existing = findPricing(2024, null, month.value, "unused");
                       if (existing) {
-                        togglePricingMutation.mutate({ id: existing.id, isActive: true });
+                        updatePricingMutation.mutate({ id: existing.id, data: { pricePerGroup: inr, priceUsdt: usdt } });
                       } else {
                         createPricingMutation.mutate({
                           startYear: 2024,
                           endYear: null,
                           month: month.value,
                           category: "unused",
-                          pricePerGroup: price,
+                          pricePerGroup: inr,
+                          priceUsdt: usdt,
                         });
                       }
                     }}
                     onDelete={(id) => deletePricingMutation.mutate(id)}
                     onToggle={(id, active) => togglePricingMutation.mutate({ id, isActive: active })}
-                    isPending={createPricingMutation.isPending || togglePricingMutation.isPending || deletePricingMutation.isPending}
+                    isPending={isPending}
                     isCompact
                   />
                 </div>
@@ -302,56 +328,80 @@ function PricingInputCard({
   isCompact = false,
 }: {
   label: string;
-  pricing: YearPricing | undefined;
-  onSave: (price: number) => void;
+  pricing: ExtendedYearPricing | undefined;
+  onSave: (inr: number, usdt: number | null) => void;
   onDelete: (id: number) => void;
   onToggle: (id: number, active: boolean) => void;
   isPending: boolean;
   isCompact?: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
-  const [inputValue, setInputValue] = useState(pricing?.pricePerGroup.toString() || "");
+  const [inrValue, setInrValue] = useState(pricing?.pricePerGroup?.toString() || "");
+  const [usdtValue, setUsdtValue] = useState(pricing?.priceUsdt?.toString() || "");
 
   const handleSave = () => {
-    if (inputValue.trim()) {
-      onSave(parseFloat(inputValue));
+    if (inrValue.trim()) {
+      onSave(parseFloat(inrValue), usdtValue.trim() ? parseFloat(usdtValue) : null);
       setIsEditing(false);
     }
   };
 
   const handleCancel = () => {
-    setInputValue(pricing?.pricePerGroup.toString() || "");
+    setInrValue(pricing?.pricePerGroup?.toString() || "");
+    setUsdtValue(pricing?.priceUsdt?.toString() || "");
     setIsEditing(false);
+  };
+
+  const startEditing = () => {
+    setInrValue(pricing?.pricePerGroup?.toString() || "");
+    setUsdtValue(pricing?.priceUsdt?.toString() || "");
+    setIsEditing(true);
   };
 
   if (!pricing && isEditing) {
     return (
       <div className={`border rounded-lg p-3 ${isCompact ? "p-2" : ""}`}>
         <label className={`text-sm font-medium block mb-2 ${isCompact ? "text-xs mb-1" : ""}`}>{label}</label>
-        <div className="flex gap-2">
-          <Input
-            type="number"
-            placeholder="Enter price"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            className="flex-1"
-            data-testid={`input-price-${label}`}
-          />
-          <Button
-            size={isCompact ? "sm" : "default"}
-            onClick={handleSave}
-            disabled={isPending}
-            data-testid={`button-save-${label}`}
-          >
-            Save
-          </Button>
-          <Button
-            size={isCompact ? "sm" : "default"}
-            variant="outline"
-            onClick={handleCancel}
-          >
-            Cancel
-          </Button>
+        <div className="space-y-2">
+          <div className="flex gap-2 items-center">
+            <IndianRupee className="h-4 w-4 text-muted-foreground shrink-0" />
+            <Input
+              type="number"
+              placeholder="INR Price"
+              value={inrValue}
+              onChange={(e) => setInrValue(e.target.value)}
+              className="flex-1"
+              data-testid={`input-inr-${label}`}
+            />
+          </div>
+          <div className="flex gap-2 items-center">
+            <Coins className="h-4 w-4 text-muted-foreground shrink-0" />
+            <Input
+              type="number"
+              placeholder="USDT Price (optional)"
+              value={usdtValue}
+              onChange={(e) => setUsdtValue(e.target.value)}
+              className="flex-1"
+              data-testid={`input-usdt-${label}`}
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              size={isCompact ? "sm" : "default"}
+              onClick={handleSave}
+              disabled={isPending}
+              data-testid={`button-save-${label}`}
+            >
+              Save
+            </Button>
+            <Button
+              size={isCompact ? "sm" : "default"}
+              variant="outline"
+              onClick={handleCancel}
+            >
+              Cancel
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -375,7 +425,7 @@ function PricingInputCard({
   }
 
   return (
-    <div className={`border rounded-lg p-3 ${isCompact ? "p-2" : ""}`}>
+    <div className={`border rounded-lg p-3 ${isCompact ? "p-2" : ""} ${!pricing.isActive ? "opacity-60" : ""}`}>
       <div className="flex items-start justify-between gap-2 mb-2">
         <label className={`text-sm font-medium ${isCompact ? "text-xs" : ""}`}>{label}</label>
         <div className="flex items-center gap-1">
@@ -398,16 +448,30 @@ function PricingInputCard({
         </div>
       </div>
       
-      <div className={`flex items-center gap-2 ${isCompact ? "gap-1" : ""}`}>
-        {isEditing ? (
-          <>
+      {isEditing ? (
+        <div className="space-y-2">
+          <div className="flex gap-2 items-center">
+            <IndianRupee className="h-4 w-4 text-muted-foreground shrink-0" />
             <Input
               type="number"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              value={inrValue}
+              onChange={(e) => setInrValue(e.target.value)}
               className={`flex-1 ${isCompact ? "text-sm h-8" : ""}`}
-              data-testid={`input-edit-${pricing.id}`}
+              data-testid={`input-edit-inr-${pricing.id}`}
             />
+          </div>
+          <div className="flex gap-2 items-center">
+            <Coins className="h-4 w-4 text-muted-foreground shrink-0" />
+            <Input
+              type="number"
+              value={usdtValue}
+              onChange={(e) => setUsdtValue(e.target.value)}
+              className={`flex-1 ${isCompact ? "text-sm h-8" : ""}`}
+              placeholder="USDT (optional)"
+              data-testid={`input-edit-usdt-${pricing.id}`}
+            />
+          </div>
+          <div className="flex gap-2">
             <Button
               size={isCompact ? "sm" : "default"}
               onClick={handleSave}
@@ -424,35 +488,48 @@ function PricingInputCard({
             >
               Cancel
             </Button>
-          </>
-        ) : (
-          <>
-            <span className={`text-2xl font-bold text-primary ${isCompact ? "text-lg" : ""}`}>
-              ₹{pricing.pricePerGroup}
-            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <IndianRupee className={`${isCompact ? "h-3 w-3" : "h-4 w-4"} text-muted-foreground`} />
+              <span className={`font-bold text-primary ${isCompact ? "text-base" : "text-xl"}`}>
+                {pricing.pricePerGroup}
+              </span>
+            </div>
+            {pricing.priceUsdt && (
+              <>
+                <span className="text-muted-foreground">|</span>
+                <div className="flex items-center gap-1">
+                  <Coins className={`${isCompact ? "h-3 w-3" : "h-4 w-4"} text-muted-foreground`} />
+                  <span className={`font-bold text-primary ${isCompact ? "text-base" : "text-xl"}`}>
+                    {pricing.priceUsdt}
+                  </span>
+                </div>
+              </>
+            )}
             <Button
               size="icon"
               variant="ghost"
               className={`h-7 w-7 ${isCompact ? "h-6 w-6" : ""}`}
-              onClick={() => {
-                setInputValue(pricing.pricePerGroup.toString());
-                setIsEditing(true);
-              }}
+              onClick={startEditing}
               disabled={isPending}
               data-testid={`button-edit-${pricing.id}`}
             >
               <Edit2 className={`${isCompact ? "h-3 w-3" : "h-4 w-4"}`} />
             </Button>
-            <Badge variant={pricing.isActive ? "default" : "outline"} className={isCompact ? "text-xs" : ""}>
-              {pricing.isActive ? (
-                <><Power className="h-2 w-2 mr-1" /> Active</>
-              ) : (
-                <><PowerOff className="h-2 w-2 mr-1" /> Stopped</>
-              )}
-            </Badge>
-          </>
-        )}
-      </div>
+          </div>
+          <Badge variant={pricing.isActive ? "default" : "outline"} className={isCompact ? "text-xs" : ""}>
+            {pricing.isActive ? (
+              <><Power className="h-2 w-2 mr-1" /> Active</>
+            ) : (
+              <><PowerOff className="h-2 w-2 mr-1" /> Stopped</>
+            )}
+          </Badge>
+        </div>
+      )}
     </div>
   );
 }

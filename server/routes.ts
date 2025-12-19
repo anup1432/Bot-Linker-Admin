@@ -807,13 +807,14 @@ export async function registerRoutes(
 
   app.post("/api/admin/year-pricing", requireAdmin, async (req, res) => {
     try {
-      const { startYear, endYear, month, category, pricePerGroup, isActive } = req.body;
+      const { startYear, endYear, month, category, pricePerGroup, priceUsdt, isActive } = req.body;
       const pricing = await storage.createYearPricing({
         startYear,
         endYear: endYear || null,
         month: month || null,
         category,
         pricePerGroup,
+        priceUsdt: priceUsdt || null,
         isActive: isActive !== undefined ? isActive : true,
       });
       res.json(pricing);
@@ -824,13 +825,14 @@ export async function registerRoutes(
 
   app.patch("/api/admin/year-pricing/:id", requireAdmin, async (req, res) => {
     try {
-      const { startYear, endYear, month, category, pricePerGroup, isActive } = req.body;
+      const { startYear, endYear, month, category, pricePerGroup, priceUsdt, isActive } = req.body;
       const updated = await storage.updateYearPricing(parseInt(req.params.id), {
         startYear,
         endYear,
         month,
         category,
         pricePerGroup,
+        priceUsdt,
         isActive,
       });
       res.json(updated);
