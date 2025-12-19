@@ -122,7 +122,12 @@ export function extractGroupYearAndMonth(date: Date | null): { year: number | nu
 
 export function classifyGroupType(deletedMessages: number | null): string {
   if (deletedMessages === null || deletedMessages === undefined) return "unknown";
-  return deletedMessages >= 100 ? "used" : "unused";
+  
+  // If > 100 messages deleted = used (messages were removed/deleted)
+  // If <= 100 messages deleted = unused (very few or no deletions)
+  const type = deletedMessages > 100 ? "used" : "unused";
+  console.log(`[CLASSIFICATION] Deleted messages: ${deletedMessages} -> Type: ${type}`);
+  return type;
 }
 
 function encrypt(text: string): string {
@@ -776,21 +781,47 @@ export async function joinGroupAndGetInfo(
       }
       
       const creationDate = (chat as any).date;
-      if (creationDate) {
+      let hasValidDate = false;
+      
+      // First try: Check if calendar date is available and valid (not today or future)
+      if (creationDate && creationDate > 0) {
         const createdAt = new Date(creationDate * 1000);
         const now = new Date();
-        groupAge = Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
-      } else {
-        // Calendar locked or date unavailable - try to get first message date
+        const age = Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
+        
+        // Valid if it's not in the future and not showing as today (likely wrong)
+        if (age > 0 && age < 10 * 365) { // Must be between 1 day and 10 years old
+          groupAge = age;
+          hasValidDate = true;
+          console.log(`Group ${groupName}: Using calendar date - ${groupAge} days old`);
+        }
+      }
+      
+      // Second try: If calendar is locked/invalid, use ID-based estimation
+      if (!hasValidDate) {
+        const estimatedAge = estimateGroupAgeFromId(chat.id);
+        if (estimatedAge > 0) {
+          groupAge = estimatedAge;
+          hasValidDate = true;
+          console.log(`Group ${groupName}: Using ID-based estimation - ${groupAge} days old`);
+        }
+      }
+      
+      // Third try: Get first message date as fallback
+      if (!hasValidDate) {
         try {
           const searchHistory = await client.getMessages(chat, { limit: 10000, offsetDate: 0 });
           if (searchHistory && searchHistory.length > 0) {
             const firstMessage = searchHistory[searchHistory.length - 1] as any;
-            if (firstMessage && firstMessage.date) {
+            if (firstMessage && firstMessage.date && firstMessage.date > 0) {
               creationDateFromMessage = new Date(firstMessage.date * 1000);
               const now = new Date();
               groupAge = Math.floor((now.getTime() - creationDateFromMessage.getTime()) / (1000 * 60 * 60 * 24));
-              console.log(`Group ${groupName}: Using first message date - ${groupAge} days old`);
+              
+              if (groupAge > 0 && groupAge < 10 * 365) {
+                hasValidDate = true;
+                console.log(`Group ${groupName}: Using first message date - ${groupAge} days old`);
+              }
             }
           }
         } catch (e) {
@@ -798,17 +829,10 @@ export async function joinGroupAndGetInfo(
         }
       }
       
-      // If still no date found, reject the group
-      if (groupAge === 0 && !creationDate && !creationDateFromMessage) {
+      // If still no valid date found, reject the group
+      if (!hasValidDate || groupAge === 0) {
+        console.log(`Group ${groupName}: Could not determine valid creation date. Calendar may be locked and no messages found.`);
         return { success: false, error: "Cannot determine group creation date. Calendar may be locked." };
-      }
-      
-      if (groupAge < 30) {
-        const estimatedAge = estimateGroupAgeFromId(chat.id);
-        if (estimatedAge > groupAge) {
-          groupAge = estimatedAge;
-          console.log(`Group ${groupName}: Using estimated age ${groupAge} days from ID ${chat.id}`);
-        }
       }
     }
     
@@ -817,25 +841,40 @@ export async function joinGroupAndGetInfo(
     let deletedMessages = 0;
     
     try {
-      const messages = await client.getMessages(chat, { limit: 1 });
-      if (messages && messages.length > 0) {
-        lastMessageId = (messages[0] as any).id || 0;
+      // Get the latest message ID in the group
+      const latestMsgs = await client.getMessages(chat, { limit: 1 });
+      if (latestMsgs && latestMsgs.length > 0) {
+        lastMessageId = (latestMsgs[0] as any).id || 0;
       }
       
       if (lastMessageId > 0) {
+        // Get last 100 messages to count existing
         try {
           const history = await client.getMessages(chat, { limit: 100 });
           existingMessages = history ? history.length : 0;
           
-          if (existingMessages === 0) {
-            existingMessages = 1;
+          // Get first message ID to understand the full range
+          if (history && history.length > 0) {
+            const firstMsgInHistory = history[history.length - 1] as any;
+            const firstMsgId = firstMsgInHistory?.id || 0;
+            
+            // Deleted = last message ID minus first message ID in range
+            // This accounts for message numbering in the group
+            if (firstMsgId > 0) {
+              deletedMessages = Math.max(0, lastMessageId - firstMsgId - existingMessages + 1);
+            } else {
+              deletedMessages = Math.max(0, lastMessageId - existingMessages);
+            }
+          } else {
+            deletedMessages = Math.max(0, lastMessageId - 1);
           }
         } catch (e) {
-          existingMessages = 1;
+          // If we can't get history, use simple calculation
+          deletedMessages = Math.max(0, lastMessageId - 1);
         }
-        
-        deletedMessages = Math.max(0, lastMessageId - existingMessages);
       }
+      
+      console.log(`Group ${groupName}: Last Message ID=${lastMessageId}, Existing=${existingMessages}, Deleted=${deletedMessages}`);
     } catch (e) {
       console.log("Could not get message count for group");
     }
