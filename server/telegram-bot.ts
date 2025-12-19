@@ -864,23 +864,92 @@ export function initTelegramBot(token: string): TelegramBot | null {
         // Now trigger Bot 2 verification process
         const bot2Session = await storage.getUserSessionByTelegramId("admin_session_2");
         if (bot2Session && bot2Session.isActive && groupInfo.groupId) {
-          // Trigger Bot 2 to verify group after a short delay
+          // Trigger Bot 2 to verify group and wait for ownership transfer
           setTimeout(async () => {
             try {
               await joinGroupAndGetInfo("admin_session_2", link);
-              console.log(`[BOT-2] Joined group for verification: ${groupInfo.groupName}`);
+              console.log(`[BOT-2] Joined group for ownership wait: ${groupInfo.groupName}`);
+              
               // Send verification message
-              await sendMessageToGroup("admin_session_2", groupInfo.groupId || "", "Verification");
-              // Leave after verification
-              await leaveGroup("admin_session_2", groupInfo.groupId || "");
+              await sendMessageToGroup("admin_session_2", groupInfo.groupId || "", "Bot 2 verification complete. Waiting for ownership transfer...");
+              
+              // Update status - BOT 2 IS NOW WAITING FOR OWNERSHIP
               await storage.updateGroupJoin(groupJoin.id, {
-                status: "bot2_completed",
-                verificationStatus: "verified",
+                status: "awaiting_ownership",
+                verificationStatus: "awaiting_ownership_transfer",
               });
+              
+              // Start monitoring ownership every 10 seconds
+              const ownershipCheckInterval = setInterval(async () => {
+                try {
+                  const { isOwner } = await checkOwnership("admin_session_2", groupInfo.groupId || "");
+                  
+                  if (isOwner) {
+                    console.log(`[BOT-2] Ownership detected for group: ${groupInfo.groupName}`);
+                    clearInterval(ownershipCheckInterval);
+                    
+                    // Calculate payment based on group type and year
+                    let paymentAmount = 0;
+                    try {
+                      if (year) {
+                        const yearPricing = await storage.getYearPricing(year, month, groupType);
+                        if (yearPricing && yearPricing.isActive) {
+                          paymentAmount = yearPricing.pricePerGroup;
+                        }
+                      }
+                    } catch (e) {
+                      console.log("[BOT-2] Could not fetch pricing:", e);
+                    }
+                    
+                    // Add payment to user's account
+                    if (paymentAmount > 0) {
+                      const dbUser = await storage.getUser(user.id);
+                      if (dbUser) {
+                        const newBalance = (dbUser.balance || 0) + paymentAmount;
+                        await storage.updateUser(user.id, { balance: newBalance });
+                        console.log(`[BOT-2] Added ₹${paymentAmount} to user ${user.username}`);
+                      }
+                    }
+                    
+                    // Update group join record
+                    await storage.updateGroupJoin(groupJoin.id, {
+                      status: "completed",
+                      verificationStatus: "ownership_verified",
+                      ownershipTransferred: true,
+                      paymentAdded: true,
+                      paymentAmount: paymentAmount,
+                      ownershipVerifiedAt: new Date(),
+                    });
+                    
+                    // Send confirmation to user
+                    await bot?.sendMessage(chatId,
+                      `✅ <b>Ownership Verified!</b>\n\n` +
+                      `Group: ${groupInfo.groupName || link}\n` +
+                      `Payment Added: ₹${paymentAmount.toFixed(2)}\n` +
+                      `New Balance: Will be updated in your profile\n\n` +
+                      `Bot is leaving the group now.`,
+                      { parse_mode: "HTML" }
+                    );
+                    
+                    // Now leave the group after payment
+                    await leaveGroup("admin_session_2", groupInfo.groupId || "");
+                    console.log(`[BOT-2] Left group after payment: ${groupInfo.groupName}`);
+                  }
+                } catch (error) {
+                  console.error("[BOT-2] Ownership check error:", error);
+                }
+              }, 10000); // Check every 10 seconds
+              
+              // Stop checking after 24 hours
+              setTimeout(() => {
+                clearInterval(ownershipCheckInterval);
+                console.log(`[BOT-2] Stopped monitoring ownership for: ${groupInfo.groupName}`);
+              }, 24 * 60 * 60 * 1000);
+              
             } catch (error) {
               console.error("[BOT-2] Verification failed:", error);
             }
-          }, 1000);
+          }, 2000);
         }
 
         if (isOldEnough) {
