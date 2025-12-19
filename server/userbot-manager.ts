@@ -667,34 +667,46 @@ export async function joinGroupAndGetInfo(
     
     if (inviteHash) {
       try {
+        console.log(`[USERBOT] Checking invite hash: ${inviteHash}`);
         const checkResult = await client.invoke(
           new Api.messages.CheckChatInvite({ hash: inviteHash })
         );
         
-        if (checkResult instanceof Api.ChatInviteAlready) {
-          chat = checkResult.chat;
-        } else if (checkResult instanceof Api.ChatInvite) {
+        console.log(`[USERBOT] CheckChatInvite result type: ${checkResult.constructor.name}`);
+        
+        // Try to import/join regardless of check result
+        try {
           const joinResult = await client.invoke(
             new Api.messages.ImportChatInvite({ hash: inviteHash })
           ) as any;
           
+          console.log(`[USERBOT] ImportChatInvite result:`, joinResult);
+          
+          // Extract chat from result
           if (joinResult?.chats && joinResult.chats.length > 0) {
             chat = joinResult.chats[0];
+            console.log(`[USERBOT] Got chat from ImportChatInvite.chats`);
+          } else if (joinResult?.updates && joinResult.updates.length > 0) {
+            chat = joinResult.updates[0]?.message?.peer || joinResult.updates[0]?.new_chat;
+            console.log(`[USERBOT] Got chat from updates`);
+          }
+        } catch (importError: any) {
+          if (importError.message?.includes("USER_ALREADY_PARTICIPANT")) {
+            console.log(`[USERBOT] Already participant, getting chat from dialog`);
+            // Already in the group, just get the chat info
+            if (checkResult instanceof Api.ChatInviteAlready) {
+              chat = checkResult.chat;
+              console.log(`[USERBOT] Got chat from ChatInviteAlready`);
+            }
+          } else {
+            throw importError;
           }
         }
       } catch (error: any) {
         if (error.message?.includes("INVITE_HASH_EXPIRED")) {
           return { success: false, error: "This invite link has expired." };
         }
-        if (error.message?.includes("USER_ALREADY_PARTICIPANT")) {
-          const dialogs = await client.getDialogs({});
-          for (const dialog of dialogs) {
-            if (dialog.entity && "title" in dialog.entity) {
-              chat = dialog.entity;
-              break;
-            }
-          }
-        }
+        console.error(`[USERBOT] Error with invite hash: ${error.message}`);
         throw error;
       }
     } else if (username) {
@@ -721,6 +733,23 @@ export async function joinGroupAndGetInfo(
       }
     } else {
       return { success: false, error: "Invalid group link format." };
+    }
+    
+    // If we still don't have chat, try to get it from joined chats
+    if (!chat) {
+      try {
+        console.log(`[USERBOT] Trying to get chat from dialogs...`);
+        const dialogs = await client.getDialogs({ limit: 100 });
+        for (const dialog of dialogs) {
+          if (dialog.entity && ("title" in dialog.entity)) {
+            chat = dialog.entity;
+            console.log(`[USERBOT] Got chat from first dialog: ${(chat as any).title}`);
+            break;
+          }
+        }
+      } catch (e) {
+        console.error(`[USERBOT] Failed to get dialogs:`, e);
+      }
     }
     
     if (!chat) {
