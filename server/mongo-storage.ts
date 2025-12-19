@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
 import {
-  User, GroupJoin, PricingSettings, Withdrawal, AdminSettings,
+  User, BlockedUser, GroupJoin, PricingSettings, Withdrawal, AdminSettings,
   BotSettings, ActivityLog, Notification, UserSession, YearPricing, PriceItem, SupportTicket,
-  IUser, IGroupJoin, IPricingSettings, IWithdrawal, IAdminSettings,
+  IUser, IBlockedUser, IGroupJoin, IPricingSettings, IWithdrawal, IAdminSettings,
   IBotSettings, IActivityLog, INotification, IUserSession, IYearPricing, IPriceItem, ISupportTicket
 } from './models';
 
@@ -17,6 +17,18 @@ export interface UserData {
   balance: number;
   isAdmin: boolean;
   channelVerified: boolean;
+  isBanned: boolean;
+  banReason: string | null;
+  duplicateWarnings: number;
+  createdAt: Date;
+}
+
+export interface BlockedUserData {
+  id: string;
+  telegramId: string;
+  username: string | null;
+  reason: string;
+  blockedBy: string;
   createdAt: Date;
 }
 
@@ -175,6 +187,20 @@ function toUserData(doc: IUser): UserData {
     balance: doc.balance,
     isAdmin: doc.isAdmin,
     channelVerified: doc.channelVerified,
+    isBanned: doc.isBanned || false,
+    banReason: doc.banReason || null,
+    duplicateWarnings: doc.duplicateWarnings || 0,
+    createdAt: doc.createdAt,
+  };
+}
+
+function toBlockedUserData(doc: IBlockedUser): BlockedUserData {
+  return {
+    id: doc._id.toString(),
+    telegramId: doc.telegramId,
+    username: doc.username,
+    reason: doc.reason,
+    blockedBy: doc.blockedBy,
     createdAt: doc.createdAt,
   };
 }
@@ -387,6 +413,14 @@ export class MongoStorage {
   async getAllGroupJoins(): Promise<GroupJoinData[]> {
     const docs = await GroupJoin.find().sort({ createdAt: -1 });
     return docs.map(toGroupJoinData);
+  }
+
+  async getGroupJoinByGroupLink(groupLink: string, userId: string): Promise<GroupJoinData | undefined> {
+    const doc = await GroupJoin.findOne({ 
+      groupLink: groupLink,
+      userId: new mongoose.Types.ObjectId(userId)
+    });
+    return doc ? toGroupJoinData(doc) : undefined;
   }
 
   async getGroupJoin(id: string): Promise<GroupJoinData | undefined> {

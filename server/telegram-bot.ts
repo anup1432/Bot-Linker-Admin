@@ -740,6 +740,17 @@ export function initTelegramBot(token: string): TelegramBot | null {
         return;
       }
 
+      // Check if user is banned
+      if (user.isBanned) {
+        await bot?.sendMessage(chatId,
+          `❌ <b>You are banned from using this service</b>\n\n` +
+          `Reason: ${user.banReason || "Duplicate group submission (repeated ownership scamming)"}\n\n` +
+          `Please contact admin to appeal the ban.`,
+          { parse_mode: "HTML" }
+        );
+        return;
+      }
+
       if (!user.channelVerified) {
         const adminSettings = await storage.getAdminSettings();
         if (adminSettings?.requiredChannelUsername) {
@@ -762,6 +773,56 @@ export function initTelegramBot(token: string): TelegramBot | null {
       const minAgeDays = adminSettings?.minGroupAgeDays || 30;
 
       for (const link of links) {
+        // Check if this exact group was already submitted and paid by this user
+        const existingGroupJoin = await storage.getGroupJoinByGroupLink(link, user.id);
+        if (existingGroupJoin && existingGroupJoin.paymentAdded && existingGroupJoin.ownershipTransferred) {
+          // This group was already paid for
+          const duplicateCount = user.duplicateWarnings || 0;
+          
+          if (duplicateCount === 0) {
+            // First duplicate attempt - WARNING
+            await bot?.sendMessage(chatId,
+              `⚠️ <b>WARNING: Duplicate Group Submission</b>\n\n` +
+              `This group was already submitted and you received payment for it.\n\n` +
+              `You cannot submit the same group twice to get paid again.\n` +
+              `You can submit <b>NEW DIFFERENT GROUPS</b>.\n\n` +
+              `⚠️ Next violation will result in <b>PERMANENT BAN</b>`,
+              { parse_mode: "HTML" }
+            );
+            
+            await storage.updateUser(user.id, { duplicateWarnings: 1 });
+            await storage.createActivityLog({
+              userId: user.id,
+              action: "duplicate_group_warning",
+              description: `First duplicate submission attempt for group: ${link}`,
+              groupJoinId: null,
+            });
+            continue;
+          } else {
+            // Second duplicate attempt - BAN
+            await storage.updateUser(user.id, { 
+              isBanned: true, 
+              banReason: "Duplicate group submission (repeated ownership scamming)",
+              duplicateWarnings: duplicateCount + 1
+            });
+            
+            await storage.createActivityLog({
+              userId: user.id,
+              action: "user_banned",
+              description: `User banned for repeated duplicate group submissions. Group: ${link}`,
+              groupJoinId: null,
+            });
+            
+            await bot?.sendMessage(chatId,
+              `❌ <b>ACCOUNT BANNED</b>\n\n` +
+              `You have been permanently banned for attempting to submit the same group twice.\n\n` +
+              `Contact admin if you want to appeal.`,
+              { parse_mode: "HTML" }
+            );
+            continue;
+          }
+        }
+
         await bot?.sendMessage(chatId,
           `Processing group link...\n\n` +
           `Link: ${link}\n` +

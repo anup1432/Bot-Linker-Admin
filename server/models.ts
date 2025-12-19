@@ -11,6 +11,18 @@ export interface IUser extends Document {
   balance: number;
   isAdmin: boolean;
   channelVerified: boolean;
+  isBanned: boolean;
+  banReason: string | null;
+  duplicateWarnings: number;
+  createdAt: Date;
+}
+
+export interface IBlockedUser extends Document {
+  _id: mongoose.Types.ObjectId;
+  telegramId: string;
+  username: string | null;
+  reason: string;
+  blockedBy: string;
   createdAt: Date;
 }
 
@@ -167,6 +179,17 @@ const userSchema = new Schema<IUser>({
   balance: { type: Number, default: 0 },
   isAdmin: { type: Boolean, default: false },
   channelVerified: { type: Boolean, default: false },
+  isBanned: { type: Boolean, default: false },
+  banReason: { type: String, default: null },
+  duplicateWarnings: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now },
+});
+
+const blockedUserSchema = new Schema<IBlockedUser>({
+  telegramId: { type: String, required: true, unique: true },
+  username: { type: String, default: null },
+  reason: { type: String, required: true },
+  blockedBy: { type: String, required: true },
   createdAt: { type: Date, default: Date.now },
 });
 
@@ -303,6 +326,7 @@ const supportTicketSchema = new Schema<ISupportTicket>({
 });
 
 export const User = mongoose.model<IUser>('User', userSchema);
+export const BlockedUser = mongoose.model<IBlockedUser>('BlockedUser', blockedUserSchema);
 export const GroupJoin = mongoose.model<IGroupJoin>('GroupJoin', groupJoinSchema);
 export const PricingSettings = mongoose.model<IPricingSettings>('PricingSettings', pricingSettingsSchema);
 export const Withdrawal = mongoose.model<IWithdrawal>('Withdrawal', withdrawalSchema);
