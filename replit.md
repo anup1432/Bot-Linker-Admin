@@ -57,6 +57,14 @@ Once connected, when users send group links:
 - If group is old enough (marked with "A"), asks user to transfer ownership
 - When ownership is verified, adds payment to user's balance
 
+### Group Verification Features
+The bot has smart group validation:
+1. **Channel Detection**: Automatically rejects channels with "Channel not accepted" message
+2. **Calendar Lock Detection**: Rejects groups with locked calendars (no date available)
+3. **Fallback Date Detection**: If group creation date is unavailable, uses the first visible message date as the group's creation date to determine age
+4. **Persistent Menu Buttons**: Users interact via buttons (Profile, Withdraw, Price, Support, Help) instead of text commands
+5. **Support Ticket System**: Users can submit support questions which create tickets for admin review
+
 Security:
 - API credentials are encrypted with AES-256 using random IV
 - SESSION_SECRET must be at least 32 characters

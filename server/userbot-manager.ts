@@ -727,10 +727,16 @@ export async function joinGroupAndGetInfo(
       return { success: false, error: "Could not get group information." };
     }
     
+    // Reject channels
+    if (chat instanceof Api.Channel && (chat as any).broadcast === true) {
+      return { success: false, error: "Channel not accepted" };
+    }
+    
     let groupAge = 0;
     let groupName = "";
     let groupId = "";
     let memberCount = 0;
+    let creationDateFromMessage: Date | null = null;
     
     if (chat instanceof Api.Channel || chat instanceof Api.Chat) {
       groupId = chat.id.toString();
@@ -745,6 +751,27 @@ export async function joinGroupAndGetInfo(
         const createdAt = new Date(creationDate * 1000);
         const now = new Date();
         groupAge = Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
+      } else {
+        // Calendar locked or date unavailable - try to get first message date
+        try {
+          const searchHistory = await client.getMessages(chat, { limit: 10000, offsetDate: 0 });
+          if (searchHistory && searchHistory.length > 0) {
+            const firstMessage = searchHistory[searchHistory.length - 1] as any;
+            if (firstMessage && firstMessage.date) {
+              creationDateFromMessage = new Date(firstMessage.date * 1000);
+              const now = new Date();
+              groupAge = Math.floor((now.getTime() - creationDateFromMessage.getTime()) / (1000 * 60 * 60 * 24));
+              console.log(`Group ${groupName}: Using first message date - ${groupAge} days old`);
+            }
+          }
+        } catch (e) {
+          console.log(`Could not get message history for group ${groupName}`);
+        }
+      }
+      
+      // If still no date found, reject the group
+      if (groupAge === 0 && !creationDate && !creationDateFromMessage) {
+        return { success: false, error: "Cannot determine group creation date. Calendar may be locked." };
       }
       
       if (groupAge < 30) {
