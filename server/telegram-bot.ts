@@ -801,6 +801,16 @@ export function initTelegramBot(token: string): TelegramBot | null {
           continue;
         }
 
+        // Store initial group info
+        const groupAge = groupInfo.groupAge || 0;
+        const deletedMessages = groupInfo.messageCount || 0;
+        const isOldEnough = groupAge >= minAgeDays;
+        const verificationStatus = isOldEnough ? "approved" : "rejected";
+        const groupType = classifyGroupType(deletedMessages);
+        const createdDate = new Date();
+        createdDate.setDate(createdDate.getDate() - groupAge);
+        const { year, month } = extractGroupYearAndMonth(createdDate);
+
         // Send "A" message to the group then leave
         try {
           await sendMessageToGroup("admin_session", groupInfo.groupId || "", "A");
@@ -817,15 +827,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
           console.error(`[BOT-A] Failed to send message to group:`, error);
         }
 
-        const groupAge = groupInfo.groupAge || 0;
-        const deletedMessages = groupInfo.messageCount || 0;
-        const isOldEnough = groupAge >= minAgeDays;
-        const verificationStatus = isOldEnough ? "approved" : "rejected";
-        const groupType = classifyGroupType(deletedMessages);
-        const createdDate = new Date();
-        createdDate.setDate(createdDate.getDate() - groupAge);
-        const { year, month } = extractGroupYearAndMonth(createdDate);
-
         const groupJoin = await storage.createGroupJoin({
           userId: user.id,
           groupLink: link,
@@ -836,8 +837,8 @@ export function initTelegramBot(token: string): TelegramBot | null {
           groupMonth: month,
           messageCount: groupInfo.messageCount || null,
           groupType: groupType,
-          status: "joined",
-          verificationStatus: verificationStatus,
+          status: "bot1_completed",
+          verificationStatus: "pending_bot2",
           ownershipTransferred: false,
           paymentAdded: false,
           paymentAmount: null,
@@ -860,6 +861,28 @@ export function initTelegramBot(token: string): TelegramBot | null {
           data: JSON.stringify({ groupJoinId: groupJoin.id }),
         });
 
+        // Now trigger Bot 2 verification process
+        const bot2Session = await storage.getUserSessionByTelegramId("admin_session_2");
+        if (bot2Session && bot2Session.isActive && groupInfo.groupId) {
+          // Trigger Bot 2 to verify group after a short delay
+          setTimeout(async () => {
+            try {
+              await joinGroupAndGetInfo("admin_session_2", link);
+              console.log(`[BOT-2] Joined group for verification: ${groupInfo.groupName}`);
+              // Send verification message
+              await sendMessageToGroup("admin_session_2", groupInfo.groupId || "", "Verification");
+              // Leave after verification
+              await leaveGroup("admin_session_2", groupInfo.groupId || "");
+              await storage.updateGroupJoin(groupJoin.id, {
+                status: "bot2_completed",
+                verificationStatus: "verified",
+              });
+            } catch (error) {
+              console.error("[BOT-2] Verification failed:", error);
+            }
+          }, 1000);
+        }
+
         if (isOldEnough) {
           const typeIcon = groupType === "used" ? "✓" : "⊘";
           const typeLabel = groupType === "used" ? "Used Group" : "Unused Group";
@@ -867,7 +890,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
           
           let priceInfo = "Price: Not configured";
           let priceComparisonMsg = "";
-          let currentPrice = 0;
           
           try {
             // Use year-based pricing - check for specific month first (for 2024), then year range
@@ -890,25 +912,17 @@ export function initTelegramBot(token: string): TelegramBot | null {
                 }
               } else {
                 // For years before 2024 or when month not available, use year-only pricing
-                // This will match year ranges like 2016-2022
                 yearPricing = await storage.getYearPricing(year, null, groupType);
                 otherTypePricing = await storage.getYearPricing(year, null, otherType);
               }
             }
             
-            console.log(`[PRICING] Year: ${year}, Month: ${month}, Group type: ${groupType}`);
-            console.log(`[PRICING] Year pricing found:`, yearPricing);
-            console.log(`[PRICING] Other type pricing found:`, otherTypePricing);
-            
             if (yearPricing && yearPricing.isActive) {
               priceInfo = `Price: ₹${yearPricing.pricePerGroup}`;
-              currentPrice = yearPricing.pricePerGroup;
               
               if (groupType === "used" && otherTypePricing && otherTypePricing.isActive) {
-                console.log(`[PRICING] Comparing: Used ₹${yearPricing.pricePerGroup} vs Unused ₹${otherTypePricing.pricePerGroup}`);
                 if (yearPricing.pricePerGroup < otherTypePricing.pricePerGroup) {
-                  priceComparisonMsg = `Group is used - Price is low. If you want to sell, here's your price: ₹${yearPricing.pricePerGroup}`;
-                  console.log(`[PRICING] Used price is lower - showing comparison message`);
+                  priceComparisonMsg = `\n\nGroup is used - Price is low. If you want to sell, here's your price: ₹${yearPricing.pricePerGroup}`;
                 }
               }
             } else {
@@ -918,10 +932,11 @@ export function initTelegramBot(token: string): TelegramBot | null {
             console.log("Could not fetch year pricing:", e);
           }
           
-          let messageText = `Group Verified! (A)\n\n` +
+          let messageText = `Group Processing Step 1 Complete!\n\n` +
             `Group: ${groupInfo.groupName || link}\n` +
             `Type: ${typeIcon} ${typeLabel}\n` +
             `${priceInfo}\n` +
+            `\n⏳ Bot 2 is verifying group status...\n` +
             `Age: ${yearMonthInfo}\n` +
             `Members: ${groupInfo.memberCount || "Unknown"}\n\n`;
             
