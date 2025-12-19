@@ -19,6 +19,18 @@ import {
 let bot: TelegramBot | null = null;
 let botInfo: { username: string; firstName: string } | null = null;
 
+// Persistent menu keyboard
+const mainMenuKeyboard = {
+  keyboard: [
+    [{ text: "👤 Profile" }, { text: "💰 Withdraw" }],
+    [{ text: "💵 Price" }, { text: "❓ Support" }],
+    [{ text: "ℹ️ Help" }]
+  ],
+  resize_keyboard: true,
+  persistent: true,
+  one_time_keyboard: false
+};
+
 export function initTelegramBot(token: string): TelegramBot | null {
   if (!token) {
     console.log("No Telegram bot token provided");
@@ -115,19 +127,10 @@ export function initTelegramBot(token: string): TelegramBot | null {
             await storage.updateUser(user.id, { channelVerified: true });
             
             await bot?.sendMessage(chatId,
-              `${welcomeMessage}\n\n` +
-              `Channel Verified!\n\nSelect an option:`,
+              `${welcomeMessage}\n\nChannel Verified! ✅`,
               {
                 parse_mode: "HTML",
-                reply_markup: {
-                  inline_keyboard: [
-                    [{ text: "💰 Withdraw", callback_data: "user_withdraw" }],
-                    [{ text: "👤 Profile", callback_data: "user_profile" }],
-                    [{ text: "💵 Price", callback_data: "user_price" }],
-                    [{ text: "❓ Support", callback_data: "user_support" }],
-                    [{ text: "ℹ️ Help", callback_data: "user_help" }],
-                  ]
-                }
+                reply_markup: mainMenuKeyboard as any
               }
             );
           } else {
@@ -166,18 +169,10 @@ export function initTelegramBot(token: string): TelegramBot | null {
         await storage.updateUser(user.id, { channelVerified: true });
         
         await bot?.sendMessage(chatId,
-          `${welcomeMessage}\n\nSelect an option:`,
+          welcomeMessage,
           {
             parse_mode: "HTML",
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: "💰 Withdraw", callback_data: "user_withdraw" }],
-                [{ text: "👤 Profile", callback_data: "user_profile" }],
-                [{ text: "💵 Price", callback_data: "user_price" }],
-                [{ text: "❓ Support", callback_data: "user_support" }],
-                [{ text: "ℹ️ Help", callback_data: "user_help" }],
-              ]
-            }
+            reply_markup: mainMenuKeyboard as any
           }
         );
       }
@@ -584,8 +579,6 @@ export function initTelegramBot(token: string): TelegramBot | null {
     });
 
     bot.on("message", async (msg) => {
-      if (msg.text?.startsWith("/")) return;
-
       const chatId = msg.chat.id;
       const userId = msg.from?.id;
       const text = msg.text || "";
@@ -593,11 +586,113 @@ export function initTelegramBot(token: string): TelegramBot | null {
 
       if (!userId) return;
 
+      // Handle menu button presses
+      if (text === "👤 Profile") {
+        const user = await storage.getUserByTelegramId(userId.toString());
+        if (user) {
+          await bot?.sendMessage(chatId,
+            `👤 <b>Your Profile</b>\n\n` +
+            `Username: @${user.username || "Not set"}\n` +
+            `Name: ${user.firstName || "Not set"}\n` +
+            `Balance: ₹${user.balance.toFixed(2)}\n` +
+            `Member Since: ${user.createdAt.toLocaleDateString()}`,
+            { parse_mode: "HTML", reply_markup: mainMenuKeyboard as any }
+          );
+        }
+        return;
+      }
+
+      if (text === "💰 Withdraw") {
+        const user = await storage.getUserByTelegramId(userId.toString());
+        if (user) {
+          const balance = user.balance || 0;
+          if (balance <= 0) {
+            await bot?.sendMessage(chatId, "Your balance is 0. Nothing to withdraw.", { reply_markup: mainMenuKeyboard as any });
+            return;
+          }
+          await bot?.sendMessage(chatId,
+            `💰 Withdraw ₹${balance.toFixed(2)}\n\n` +
+            `Send your payment details:\n\n` +
+            `/payout UPI your_upi_id@bank\n` +
+            `or\n` +
+            `/payout BANK Account_Number IFSC_Code Name`,
+            { parse_mode: "HTML", reply_markup: mainMenuKeyboard as any }
+          );
+        }
+        return;
+      }
+
+      if (text === "💵 Price") {
+        try {
+          const priceItems = await storage.getAllPriceItems();
+          if (priceItems.length === 0) {
+            await bot?.sendMessage(chatId, "📋 Price list is currently empty.", { reply_markup: mainMenuKeyboard as any });
+            return;
+          }
+          let priceMessage = "💰 <b>Price List</b>\n\n";
+          for (const item of priceItems) {
+            let statusIcon = "❌";
+            if (item.status === "on") statusIcon = "✅";
+            if (item.status === "not now") statusIcon = "⏳";
+            priceMessage += `${statusIcon} <b>${item.name}</b>\n`;
+            if (item.status === "off") {
+              priceMessage += `Status: Not available\n\n`;
+            } else if (item.status === "not now") {
+              priceMessage += `Status: Not now - need render\n`;
+              if (item.price) priceMessage += `Price: ₹${item.price}\n`;
+              priceMessage += "\n";
+            } else {
+              if (item.price) priceMessage += `Price: ₹${item.price}\n`;
+              if (item.description) priceMessage += `Info: ${item.description}\n`;
+              priceMessage += "\n";
+            }
+          }
+          await bot?.sendMessage(chatId, priceMessage, { parse_mode: "HTML", reply_markup: mainMenuKeyboard as any });
+        } catch (error) {
+          await bot?.sendMessage(chatId, "Error loading price list.", { reply_markup: mainMenuKeyboard as any });
+        }
+        return;
+      }
+
+      if (text === "❓ Support") {
+        const user = await storage.getUserByTelegramId(userId.toString());
+        if (user) {
+          const sessionMap = new Map();
+          sessionMap.set(userId.toString(), { step: "support_question" });
+          await bot?.sendMessage(chatId,
+            "❓ <b>Support</b>\n\n" +
+            "Ask your question. Our admin will respond soon:",
+            { parse_mode: "HTML", reply_markup: mainMenuKeyboard as any }
+          );
+        }
+        return;
+      }
+
+      if (text === "ℹ️ Help") {
+        await bot?.sendMessage(chatId,
+          `ℹ️ <b>How to Use</b>\n\n` +
+          `1. Send me a Telegram group invite link\n` +
+          `2. I'll verify the group age\n` +
+          `3. Transfer ownership to our account\n` +
+          `4. Payment added to your balance\n` +
+          `5. Withdraw anytime!\n\n` +
+          `<b>Commands:</b>\n` +
+          `/start - Show menu\n` +
+          `/mygroups - View your groups\n` +
+          `/cancel - Cancel any action`,
+          { parse_mode: "HTML", reply_markup: mainMenuKeyboard as any }
+        );
+        return;
+      }
+
+      // Skip command processing
+      if (msg.text?.startsWith("/")) return;
+
       const sessionState = getSessionState(userId.toString());
       if (sessionState) {
         const user = await storage.getUserByTelegramId(userId.toString());
         if (!user) {
-          await bot?.sendMessage(chatId, "Please /start the bot first.");
+          await bot?.sendMessage(chatId, "Please /start the bot first.", { reply_markup: mainMenuKeyboard as any });
           return;
         }
 
@@ -622,13 +717,14 @@ export function initTelegramBot(token: string): TelegramBot | null {
           cancelSession(userId.toString());
           await bot?.sendMessage(chatId,
             "✅ Your question has been sent!\n\n" +
-            "Admin will respond soon. You can check your support history anytime."
+            "Admin will respond soon. You can check your support history anytime.",
+            { reply_markup: mainMenuKeyboard as any }
           );
           return;
         }
 
         const result = await processAdminSessionStep(userId.toString(), text);
-        await bot?.sendMessage(chatId, result.message);
+        await bot?.sendMessage(chatId, result.message, { reply_markup: mainMenuKeyboard as any });
         return;
       }
 
